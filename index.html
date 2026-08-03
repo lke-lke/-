@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>筝一小助理管理看板</title>
+  <script>
+  (function() {
+    if (window.oneday) return;
+    var noopSupabase = new Proxy(function(){}, {
+      get: function(_, prop) {
+        if (prop === 'then') return function(resolve) { resolve({ data: null, error: { message: 'Supabase not available', code: 'NOT_AVAILABLE' }, count: 0 }); };
+        if (prop === 'data') return null;
+        if (prop === 'error') return { message: 'Supabase not available', code: 'NOT_AVAILABLE' };
+        if (prop === 'count') return 0;
+        return noopSupabase;
+      },
+      apply: function() { return noopSupabase; }
+    });
+    window.oneday = {
+      __polyfill: true,
+      createClient: function() { return null; },
+      supabase: noopSupabase,
+      auth: noopSupabase,
+      storage: noopSupabase
+    };
+  })();
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>
