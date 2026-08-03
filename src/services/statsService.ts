@@ -103,7 +103,8 @@ export function getTeamOverviewFacts(tasks: Task[], docs: Document[], rescans: R
 function getRangeStart(range: TimeRange): dayjs.Dayjs {
   if (range === 'week') return TODAY.startOf('week');
   if (range === 'month') return TODAY.startOf('month');
-  return TODAY.startOf('month').month(Math.floor(TODAY.month() / 3) * 3); // 季度首月
+  // 公司季度边界与自然季度相同，但季度编号为：4–6月 Q1、7–9月 Q2、10–12月 Q3、1–3月 Q4。
+  return TODAY.startOf('month').month(Math.floor(TODAY.month() / 3) * 3);
 }
 
 function getPeriodStat(tasks: Task[], team: Team, range: TimeRange): PeriodStat {

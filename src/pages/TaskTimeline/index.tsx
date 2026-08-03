@@ -10,6 +10,9 @@ import { getTeamTaskPeriodStats, TaskBoardStatus, TeamTaskPeriodStats } from '@/
 type PeriodMode = '日' | '周' | '月' | '季度' | '自定义';
 const STATUSES: TaskBoardStatus[] = ['待开始', '进行中', '回扫中', '待确认', '已完成'];
 const STATUS_COLORS: Record<TaskBoardStatus, string> = { 待开始: '#ddd3c9', 进行中: '#806c79', 回扫中: '#b97d7b', 待确认: '#c1a0ac', 已完成: '#928e5e' };
+// 公司财年：Q1=4–6月，Q2=7–9月，Q3=10–12月，Q4=1–3月。
+const getCompanyQuarter = (date: Dayjs) => (Math.floor(date.month() / 3) + 3) % 4 + 1;
+const formatCompanyQuarter = (date: Dayjs) => `${date.year()}-Q${getCompanyQuarter(date)}`;
 
 function getRange(mode: PeriodMode, date: Dayjs, customRange: [Dayjs, Dayjs] | null): [Dayjs, Dayjs] {
   if (mode === '自定义') return customRange || [date.startOf('day'), date.endOf('day')];
@@ -48,7 +51,7 @@ export default function TaskTimeline() {
     <Card className="timeline-filter-card">
       <div className="timeline-filter-row">
         <Segmented value={mode} onChange={value => setMode(value as PeriodMode)} options={['日', '周', '月', '季度', '自定义']} />
-        {mode === '自定义' ? <DatePicker.RangePicker value={customRange as any} onChange={value => setCustomRange(value?.[0] && value?.[1] ? [value[0], value[1]] : null)} /> : <DatePicker picker={picker as any} showWeek={mode === '周' ? false : undefined} value={anchorDate} onChange={value => value && setAnchorDate(value)} />}
+        {mode === '自定义' ? <DatePicker.RangePicker value={customRange as any} onChange={value => setCustomRange(value?.[0] && value?.[1] ? [value[0], value[1]] : null)} /> : <DatePicker picker={picker as any} showWeek={mode === '周' ? false : undefined} format={mode === '季度' ? formatCompanyQuarter : undefined} inputReadOnly={mode === '季度'} value={anchorDate} onChange={value => value && setAnchorDate(value)} />}
         <Tag color="blue">统计区间：{range[0].format('YYYY-MM-DD')} 至 {range[1].format('YYYY-MM-DD')}</Tag>
       </div>
     </Card>
