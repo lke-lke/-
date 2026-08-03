@@ -48,7 +48,7 @@ export default function TaskTimeline() {
     <Card className="timeline-filter-card">
       <div className="timeline-filter-row">
         <Segmented value={mode} onChange={value => setMode(value as PeriodMode)} options={['日', '周', '月', '季度', '自定义']} />
-        {mode === '自定义' ? <DatePicker.RangePicker value={customRange as any} onChange={value => setCustomRange(value?.[0] && value?.[1] ? [value[0], value[1]] : null)} /> : <DatePicker picker={picker as any} value={anchorDate} onChange={value => value && setAnchorDate(value)} />}
+        {mode === '自定义' ? <DatePicker.RangePicker value={customRange as any} onChange={value => setCustomRange(value?.[0] && value?.[1] ? [value[0], value[1]] : null)} /> : <DatePicker picker={picker as any} showWeek={mode === '周' ? false : undefined} value={anchorDate} onChange={value => value && setAnchorDate(value)} />}
         <Tag color="blue">统计区间：{range[0].format('YYYY-MM-DD')} 至 {range[1].format('YYYY-MM-DD')}</Tag>
       </div>
     </Card>
