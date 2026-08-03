@@ -10,18 +10,17 @@ const STATUS_COLUMNS: TaskStatus[] = [
   TaskStatus.PENDING,
   TaskStatus.IN_PROGRESS,
   TaskStatus.DATA_DONE,
-  TaskStatus.TO_DELIVER,
   TaskStatus.TO_ACCEPT,
   TaskStatus.DONE,
 ];
 
 const COLUMN_COLORS: Record<TaskStatus, string> = {
-  [TaskStatus.PENDING]: '#f0eef2',
-  [TaskStatus.IN_PROGRESS]: '#e9e6f3',
-  [TaskStatus.DATA_DONE]: '#eeeaf7',
-  [TaskStatus.TO_DELIVER]: '#f7dfd7',
-  [TaskStatus.TO_ACCEPT]: '#f6b3a0',
-  [TaskStatus.DONE]: '#d0cce5',
+  [TaskStatus.PENDING]: '#f2ece7',
+  [TaskStatus.IN_PROGRESS]: '#eee4e7',
+  [TaskStatus.DATA_DONE]: '#f0d9e4',
+  [TaskStatus.TO_DELIVER]: '#f0d9e4',
+  [TaskStatus.TO_ACCEPT]: '#ecc4c3',
+  [TaskStatus.DONE]: '#e3e1c7',
 };
 
 const createEmptyGroups = (): Record<TaskStatus, Task[]> => STATUS_COLUMNS.reduce((groups, status) => {
@@ -37,7 +36,9 @@ export default function Kanban() {
 
   useEffect(() => {
     getTasks().then(tasks => setGrouped(tasks.reduce((result, task) => {
-      result[task.status].push(task);
+      // “待交付”不再单列展示，合并进数据完成阶段，避免任务在看板中消失。
+      const columnStatus = task.status === TaskStatus.TO_DELIVER ? TaskStatus.DATA_DONE : task.status;
+      result[columnStatus].push(task);
       return result;
     }, createEmptyGroups())));
   }, []);
@@ -52,42 +53,37 @@ export default function Kanban() {
   const allAssignees = [...new Set(Object.values(grouped).flat().map(t => t.assignee))];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h2 style={{ margin: 0 }}>任务流转看板</h2>
-        <Space>
+    <div className="kanban-page">
+      <div className="kanban-toolbar">
+        <div><div className="eyebrow">TASK FLOW</div><h2>任务流转看板</h2></div>
+        <Space wrap className="kanban-filters">
           <Select
             allowClear
             placeholder="筛选小组"
-            style={{ width: 120 }}
+            className="kanban-filter"
             onChange={v => setFilterTeam(v || '')}
             options={ALL_TEAMS.map(t => ({ label: t, value: t }))}
           />
           <Select
             allowClear
             placeholder="筛选负责人"
-            style={{ width: 120 }}
+            className="kanban-filter"
             onChange={v => setFilterAssignee(v || '')}
             options={allAssignees.map(a => ({ label: a, value: a }))}
           />
         </Space>
       </div>
 
-      <div style={{ display: 'flex', gap: 12, overflow: 'auto', paddingBottom: 16 }}>
+      <div className="kanban-board">
         {STATUS_COLUMNS.map(status => {
           const tasks = getFilteredTasks(grouped[status] || []);
           return (
             <div
               key={status}
-              style={{
-                flex: '0 0 240px',
-                background: COLUMN_COLORS[status],
-                borderRadius: 8,
-                padding: 12,
-                minHeight: 400,
-              }}
+              className="kanban-column"
+              style={{ background: COLUMN_COLORS[status] }}
             >
-              <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 13 }}>
+              <div className="kanban-column-title">
                 {status} <span style={{ color: 'var(--ink-soft)', fontWeight: 400 }}>({tasks.length})</span>
               </div>
               {tasks.map(task => (
@@ -97,6 +93,7 @@ export default function Kanban() {
                   onClick={() => navigate(`/tasks/${task.id}`)}
                 />
               ))}
+              {!tasks.length && <div className="kanban-empty">暂无任务</div>}
             </div>
           );
         })}

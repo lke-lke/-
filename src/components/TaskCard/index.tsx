@@ -22,7 +22,7 @@ export default function TaskCard({ task, onClick }: Props) {
       style={{ marginBottom: 8, borderLeft: isOverdue ? '3px solid #eb687b' : undefined }}
     >
       <div style={{ marginBottom: 4 }}>
-        <strong style={{ fontSize: 13 }}>{task.name}</strong>
+        <strong className="task-card-name">{task.name}</strong>
       </div>
       <Space size={4} wrap style={{ marginBottom: 6 }}>
         <StatusTag status={task.status} />
