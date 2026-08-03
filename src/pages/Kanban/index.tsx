@@ -53,37 +53,42 @@ export default function Kanban() {
   const allAssignees = [...new Set(Object.values(grouped).flat().map(t => t.assignee))];
 
   return (
-    <div className="kanban-page">
-      <div className="kanban-toolbar">
-        <div><div className="eyebrow">TASK FLOW</div><h2>任务流转看板</h2></div>
-        <Space wrap className="kanban-filters">
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h2 style={{ margin: 0 }}>任务流转看板</h2>
+        <Space>
           <Select
             allowClear
             placeholder="筛选小组"
-            className="kanban-filter"
+            style={{ width: 120 }}
             onChange={v => setFilterTeam(v || '')}
             options={ALL_TEAMS.map(t => ({ label: t, value: t }))}
           />
           <Select
             allowClear
             placeholder="筛选负责人"
-            className="kanban-filter"
+            style={{ width: 120 }}
             onChange={v => setFilterAssignee(v || '')}
             options={allAssignees.map(a => ({ label: a, value: a }))}
           />
         </Space>
       </div>
 
-      <div className="kanban-board">
+      <div style={{ display: 'flex', gap: 12, overflow: 'auto', paddingBottom: 16 }}>
         {STATUS_COLUMNS.map(status => {
           const tasks = getFilteredTasks(grouped[status] || []);
           return (
             <div
               key={status}
-              className="kanban-column"
-              style={{ background: COLUMN_COLORS[status] }}
+              style={{
+                flex: '0 0 240px',
+                background: COLUMN_COLORS[status],
+                borderRadius: 8,
+                padding: 12,
+                minHeight: 400,
+              }}
             >
-              <div className="kanban-column-title">
+              <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 13 }}>
                 {status} <span style={{ color: 'var(--ink-soft)', fontWeight: 400 }}>({tasks.length})</span>
               </div>
               {tasks.map(task => (
@@ -93,7 +98,7 @@ export default function Kanban() {
                   onClick={() => navigate(`/tasks/${task.id}`)}
                 />
               ))}
-              {!tasks.length && <div className="kanban-empty">暂无任务</div>}
+              {!tasks.length && <div style={{ color: 'var(--ink-soft)', fontSize: 12, textAlign: 'center', padding: '16px 0' }}>暂无任务</div>}
             </div>
           );
         })}
