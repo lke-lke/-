@@ -7,6 +7,7 @@ import TaskCard from '@/components/TaskCard';
 import { useNavigate } from 'react-router-dom';
 
 const STATUS_COLUMNS: TaskStatus[] = [
+  TaskStatus.PENDING_INFO,
   TaskStatus.PENDING,
   TaskStatus.IN_PROGRESS,
   TaskStatus.DATA_DONE,
@@ -15,6 +16,7 @@ const STATUS_COLUMNS: TaskStatus[] = [
 ];
 
 const COLUMN_COLORS: Record<TaskStatus, string> = {
+  [TaskStatus.PENDING_INFO]: '#f4e7dc',
   [TaskStatus.PENDING]: '#f2ece7',
   [TaskStatus.IN_PROGRESS]: '#eee4e7',
   [TaskStatus.DATA_DONE]: '#f0d9e4',
@@ -38,6 +40,7 @@ export default function Kanban() {
     getTasks().then(tasks => setGrouped(tasks.reduce((result, task) => {
       // “待交付”不再单列展示，合并进数据完成阶段，避免任务在看板中消失。
       const columnStatus = task.status === TaskStatus.TO_DELIVER ? TaskStatus.DATA_DONE : task.status;
+      if (!result[columnStatus]) result[columnStatus] = [];
       result[columnStatus].push(task);
       return result;
     }, createEmptyGroups())));

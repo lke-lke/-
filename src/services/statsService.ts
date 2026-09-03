@@ -29,6 +29,8 @@ export interface TeamOverviewFacts {
   activeTasks: number;
   activeDataVolume: number;
   riskTasks: number;
+  overdueTasks: number;
+  overdueRate: number;
   avgProgress: number;
   difficultyCounts: Record<number, number>;
   unratedTasks: number;
@@ -55,7 +57,7 @@ export function getTeamTaskPeriodStats(tasks: Task[], rescans: RescanRecord[], s
     if (task.status === TaskStatus.DONE) return '已完成';
     if (hasActiveRescan(task.id)) return '回扫中';
     if (task.status === TaskStatus.TO_ACCEPT) return '待确认';
-    if (task.status === TaskStatus.PENDING) return '待开始';
+    if (task.status === TaskStatus.PENDING || task.status === TaskStatus.PENDING_INFO) return '待开始';
     return '进行中';
   };
   return ALL_TEAMS.map(team => {
@@ -83,10 +85,13 @@ export function getTeamOverviewFacts(tasks: Task[], docs: Document[], rescans: R
       const risk = b.alerts.length - a.alerts.length;
       return risk || a.progress - b.progress || (b.difficulty || 1) - (a.difficulty || 1);
     });
+    const overdueTasks = active.filter(task => task.deadline && dayjs(task.deadline).isBefore(TODAY, 'day')).length;
     return {
       team, leader: TEAM_LEADERS[team], activeTasks: active.length,
       activeDataVolume: active.reduce((sum, task) => sum + task.dataVolume, 0),
-      riskTasks: active.filter(task => task.alerts.length > 0).length,
+      riskTasks: active.filter(task => task.alerts.length > 0 || (task.deadline && dayjs(task.deadline).isBefore(TODAY, 'day'))).length,
+      overdueTasks,
+      overdueRate: active.length ? overdueTasks / active.length : 0,
       avgProgress: active.length ? active.reduce((sum, task) => sum + task.progress, 0) / active.length : 1,
       difficultyCounts, unratedTasks: active.filter(task => !task.difficulty).length,
       weeklyActions: {

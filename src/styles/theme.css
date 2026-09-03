@@ -33,6 +33,12 @@ body { margin: 0; background: var(--canvas); color: var(--ink); font-family: "Pi
 .app-header-title { font-size: 18px; font-weight: 700; color: var(--ink); }
 .app-header-note { color: var(--ink-soft); font-size: 13px; background: #f0edf5; padding: 7px 12px; border-radius: 999px; }
 .app-content.ant-layout-content { background: var(--canvas); padding: 34px 34px 48px; }
+.actor-bar { height: 42px; display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding: 0 34px; color: var(--ink-soft); font-size: 12px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.52); }
+.actor-bar .ant-select { min-width: 150px; }
+.work-tag-summary { display: flex; flex-wrap: wrap; gap: 10px; min-height: 30px; align-items: center; }
+.task-detail-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; padding: 9px; border-radius: 12px; background: #f8eff1; }
+.task-detail-nav a { padding: 4px 8px; border-radius: 8px; font-size: 12px; color: var(--ink-soft) !important; }
+.task-detail-nav a:hover { background: var(--surface); color: var(--coral) !important; }
 .page-frame { max-width: 1500px; margin: 0 auto; }
 
 .page-title-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin: 2px 0 22px; }
@@ -101,6 +107,13 @@ body { margin: 0; background: var(--canvas); color: var(--ink); font-family: "Pi
 .revision-note { margin-top: 12px; color: var(--ink-soft); font-size: 12px; line-height: 1.65; }
 .final-difficulty { display: flex; align-items: center; gap: 8px; }
 .settlement-check { margin-top: 14px; padding: 10px 12px; border-radius: 10px; background: #f6edef; color: var(--ink-soft); font-size: 12px; }
+.relation-summary .ant-card-body { padding-top: 14px; }
+.relation-tree .ant-tree-node-content-wrapper, .team-task-tree .ant-tree-node-content-wrapper { width: calc(100% - 26px); min-height: 32px; padding: 5px 8px !important; border-radius: 9px; }
+.relation-tree .ant-tree-node-content-wrapper:hover, .team-task-tree .ant-tree-node-content-wrapper:hover { background: #f7eef1; }
+.tree-ownership-title { color: var(--ink); font-size: 14px; }.tree-main-title { color: var(--lavender-deep); font-weight: 650; }
+.team-tree-note { margin-bottom: 14px; padding: 10px 12px; border-radius: 12px; background: #f6edef; color: var(--ink-soft); font-size: 12px; }
+.team-task-node { width: min(760px, calc(100vw - 190px)); display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 3px 0; }.team-task-meta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 5px; color: var(--ink-soft); font-size: 12px; }
+.personal-filter-card .ant-card-body { padding: 16px 20px; }.personal-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }.personal-summary .ant-card .ant-card-body { padding: 18px 22px; }
 
 .timeline-filter-card .ant-card-body { padding: 16px 20px; }
 .timeline-filter-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }

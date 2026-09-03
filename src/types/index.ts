@@ -16,6 +16,8 @@ export interface Task {
   workforce: number;
   createdAt: string;
   deadline: string;
+  /** 组长预填的预计完成时间；实际截止时间以 deadline 为准。 */
+  expectedDeadline?: string;
   status: TaskStatus;
   platformTaskId?: string;
   ruleDocLink?: string;
@@ -24,6 +26,30 @@ export interface Task {
   docCompleteness: number;
   alerts: Alert[];
   remark?: string;
+  relationId?: string;
+  mainTask?: string;
+  linkedTask?: string;
+  participantNames?: string[];
+}
+
+export interface TaskRelation {
+  id: string;
+  ownership: string;
+  mainTask: string;
+  linkedTask: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskFieldChange {
+  id: string;
+  taskId: string;
+  field: string;
+  beforeValue?: string | number;
+  afterValue?: string | number;
+  changedBy: string;
+  changedAt: string;
 }
 
 export interface Document {
@@ -38,6 +64,39 @@ export interface Document {
   reviewedBy?: string;
   reviewedAt?: string;
   reviewComment?: string;
+  version?: number;
+  replacedDocumentId?: string;
+  /** 组长验收后，可提交管理员作二级审核；该链路预留给后续管理员/组员页面。 */
+  adminReviewStatus?: 'not_submitted' | 'pending' | 'approved' | 'rejected';
+  submittedToAdminAt?: string;
+  adminReviewedBy?: string;
+  adminReviewedAt?: string;
+  adminReviewComment?: string;
+  /** 管理员驳回后重提不会清零，用于管理员跟踪返修轮次。 */
+  adminRevisionCount?: number;
+  /** 审核路线由组长首次验收时决定；进入管理员路线后不可降级。 */
+  reviewRoute?: 'undecided' | 'leader_only' | 'leader_then_admin';
+  workflowStatus?: 'pending_leader_review' | 'member_revision_required' | 'pending_admin_review' | 'leader_revision_required' | 'completed_by_leader' | 'completed_by_admin';
+  leaderRejectionCount?: number;
+  finalApprovalLevel?: 'leader' | 'admin';
+  completedBy?: string;
+  completedAt?: string;
+  /** 同一交付物多个版本共用的根记录，便于串起完整审核历史。 */
+  rootDocumentId?: string;
+}
+
+export interface DocumentReviewEvent {
+  id: string;
+  documentId: string;
+  rootDocumentId: string;
+  taskId: string;
+  actor: string;
+  actorRole: '管理员' | '组长' | '组员';
+  action: 'member_submitted' | 'leader_rejected' | 'leader_completed' | 'leader_submitted_admin' | 'admin_rejected' | 'admin_completed' | 'leader_returned_member' | 'leader_resubmitted_admin';
+  fromStatus?: Document['workflowStatus'];
+  toStatus: NonNullable<Document['workflowStatus']>;
+  comment?: string;
+  createdAt: string;
 }
 
 export interface TaskContribution {
@@ -50,6 +109,9 @@ export interface TaskContribution {
   note?: string;
   attachedBy: string;
   attachedAt: string;
+  status?: 'pending' | 'confirmed' | 'removed';
+  confirmedBy?: string;
+  confirmedAt?: string;
 }
 
 export interface DifficultyRevision {

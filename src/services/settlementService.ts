@@ -13,6 +13,8 @@ const toContribution = (row: any): TaskContribution => ({
   evidenceType: row.evidenceType ?? row.evidence_type, evidenceId: row.evidenceId ?? row.evidence_id,
   note: row.note, attachedBy: row.attachedBy ?? row.attached_by,
   attachedAt: row.attachedAt ?? String(row.attached_at).slice(0, 10),
+  status: row.status ?? 'pending', confirmedBy: row.confirmedBy ?? row.confirmed_by,
+  confirmedAt: row.confirmedAt ?? (row.confirmed_at ? String(row.confirmed_at).slice(0, 16) : undefined),
 });
 
 const toRevision = (row: any): DifficultyRevision => ({
@@ -27,6 +29,12 @@ export async function getTaskContributions(taskId: string): Promise<TaskContribu
   const { data } = await client.supabase.from('task_contributions').select('*').eq('task_id', taskId).order('attached_at');
   return (data || []).map(toContribution);
 }
+export async function getAllTaskContributions(): Promise<TaskContribution[]> {
+  if (USE_MOCK) return localContributions;
+  const client = ensureOnedayClient(); if (!client) return [];
+  const { data } = await client.supabase.from('task_contributions').select('*').order('attached_at', { ascending: false });
+  return (data || []).map(toContribution);
+}
 
 export async function addTaskContribution(input: Omit<TaskContribution, 'id' | 'attachedAt'>): Promise<TaskContribution> {
   const item: TaskContribution = { ...input, id: `tc${Date.now()}-${++localContributionSequence}`, attachedAt: new Date().toISOString().slice(0, 10) };
@@ -35,8 +43,17 @@ export async function addTaskContribution(input: Omit<TaskContribution, 'id' | '
   const { data } = await client.supabase.from('task_contributions').insert([{
     task_id: item.taskId, member: item.member, tag: item.tag, evidence_type: item.evidenceType,
     evidence_id: item.evidenceId, note: item.note, attached_by: item.attachedBy, attached_at: item.attachedAt,
+    status: item.status ?? 'pending', confirmed_by: item.confirmedBy, confirmed_at: item.confirmedAt,
   }]).select().single();
   return data ? toContribution(data) : item;
+}
+
+export async function confirmTaskContribution(id: string, confirmedBy: string): Promise<TaskContribution | null> {
+  const confirmedAt = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  if (USE_MOCK) { const index = localContributions.findIndex(item => item.id === id); if (index < 0) return null; localContributions[index] = { ...localContributions[index], status: 'confirmed', confirmedBy, confirmedAt }; return localContributions[index]; }
+  const client = ensureOnedayClient(); if (!client) return null;
+  const { data } = await client.supabase.from('task_contributions').update({ status: 'confirmed', confirmed_by: confirmedBy, confirmed_at: confirmedAt }).eq('id', id).select().single();
+  return data ? toContribution(data) : null;
 }
 
 export async function removeTaskContribution(id: string): Promise<void> {

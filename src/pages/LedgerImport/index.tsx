@@ -51,15 +51,15 @@ export default function LedgerImport() {
           taskType: taskType(row.name, String(row.payload.taskGroup || '')), assignee, team, teamLeader: TEAM_LEADERS[team],
           dataReporter: String(row.payload.dataReporter || ''), reviewer: String(row.payload.reviewer || ''),
           dataVolume: row.volume || 0, workforce: 0, createdAt: row.date || new Date().toISOString().slice(0, 10),
-          deadline: String(row.payload.deadline || row.date || new Date().toISOString().slice(0, 10)),
+          // 台账导入只建立任务骨架；两类截止时间均由组长在任务详情中确认。
+          expectedDeadline: '', deadline: '', initialStatus: TaskStatus.PENDING_INFO,
           platformTaskId: row.externalId, ruleDocLink: String(row.payload.ruleDoc || ''), remark: `Excel 导入：${row.sourceSheet} 第 ${row.sourceRow} 行`, difficulty: undefined,
         });
-        if (row.payload.ruleDoc) await updateTask(created.id, { status: TaskStatus.IN_PROGRESS });
         knownKeys.add(rowKey);
         createdCount += 1;
       }
-      setImported(`已导入 ${createdCount} 条任务，跳过 ${skippedCount} 条重复记录；当前归属：${team} / ${assignee}`);
-      message.success('任务台账导入完成');
+      setImported(`已导入 ${createdCount} 条任务，跳过 ${skippedCount} 条重复记录；已分配至：${team} / ${assignee}。任务已进入“待完善”，请由组长补齐字段后启动。`);
+      message.success('任务台账导入完成，已等待组长完善');
     } finally { setLoading(false); }
   };
   const importRescans = async () => {
@@ -81,8 +81,8 @@ export default function LedgerImport() {
   };
 
   return <div>
-    <h2>台账手动拉取</h2>
-    <Alert type="info" showIcon style={{ marginBottom: 16 }} message="支持《美学&试衣数据留存文档》和《业务借调明细》。读取仅在浏览器内预览；关联缺失的数据必须确认后才能入库。" />
+    <div className="page-title-row"><div><span className="eyebrow">IMPORT CENTER</span><h2>导入中心</h2><p>上传任务台账并完成字段识别、预览校验和确认入库；回扫台账保留解析与关联入口。</p></div></div>
+    <Alert type="info" showIcon style={{ marginBottom: 16 }} message="支持《美学&试衣数据留存文档》和《业务借调明细》。任务台账导入后会先进入“待完善”，由组长补齐任务挂链、预计截止时间和实际截止时间后才进入进行中。" />
     <Card title="上传 Excel 台账" style={{ marginBottom: 16 }}>
       <Upload.Dragger accept=".xlsx" maxCount={1} showUploadList={false} beforeUpload={readFile} disabled={loading}>
         <p><InboxOutlined style={{ fontSize: 32, color: '#b6b3d6' }} /></p><p>点击或拖入 Excel 文件</p><p style={{ color: 'var(--ink-soft)' }}>系统将自动识别任务台账或借调台账</p>
@@ -100,7 +100,7 @@ export default function LedgerImport() {
           <Select placeholder="统一主负责人" style={{ width: 150 }} value={assignee} onChange={setAssignee} disabled={!team} options={(team ? TEAM_MEMBERS[team] : []).map(value => ({ value, label: value }))} />
           <Button type="primary" loading={loading} disabled={!team || !assignee} onClick={importTasks}>确认导入 {preview.total} 条任务</Button>
         </Space> : <Button type="primary" loading={loading} onClick={importRescans}>导入可自动关联的借调记录</Button>}
-        <div style={{ color: 'var(--ink-soft)', fontSize: 12, marginTop: 10 }}>{preview.kind === 'task' ? '台账没有当前系统的小组与主负责人字段，因此需先指定本批次归属。' : '仅导入与现有任务名称精确匹配的记录；其余记录不会被写入。'}</div>
+        <div style={{ color: 'var(--ink-soft)', fontSize: 12, marginTop: 10 }}>{preview.kind === 'task' ? '台账没有当前系统的小组与主负责人字段，因此需先指定本批次归属。入库后请由对应组长在“本组任务”完成字段补齐。' : '仅导入与现有任务名称精确匹配的记录；其余记录不会被写入。'}</div>
         {USE_MOCK && <Alert type="warning" showIcon message="当前为 Mock 数据模式：导入后刷新页面会丢失。开通 OneDay Cloud 后，导入记录才会持久保存。" style={{ marginTop: 12 }} />}
         {imported && <Alert type="success" showIcon message={imported} style={{ marginTop: 12 }} />}
       </Card>

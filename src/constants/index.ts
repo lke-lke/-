@@ -1,10 +1,26 @@
 export enum TaskStatus {
+  PENDING_INFO = '待完善',
   PENDING = '待开始',
   IN_PROGRESS = '进行中',
   DATA_DONE = '数据完成',
   TO_DELIVER = '待交付',
   TO_ACCEPT = '待验收',
   DONE = '已完成',
+}
+
+// 任务状态的系统值保持不变，避免影响既有流程判断；看板展示按最新口径互换两个人工确认阶段。
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  [TaskStatus.PENDING_INFO]: '待完善',
+  [TaskStatus.PENDING]: '待开始',
+  [TaskStatus.IN_PROGRESS]: '进行中',
+  [TaskStatus.DATA_DONE]: '数据完成',
+  [TaskStatus.TO_DELIVER]: '待验收',
+  [TaskStatus.TO_ACCEPT]: '待交付',
+  [TaskStatus.DONE]: '已完成',
+};
+
+export function getTaskStatusLabel(status: TaskStatus) {
+  return TASK_STATUS_LABELS[status] || status;
 }
 
 export enum TaskType {
@@ -18,7 +34,7 @@ export enum TaskType {
 
 export enum TaskOwnership {
   AI_TRYON = 'AI试穿-模型评测',
-  LOOKIE = 'Lookie-横向评测',
+  LOOKIE = 'lookie横向评测',
   OTHER = '其他',
 }
 
@@ -102,17 +118,17 @@ export enum Team {
 }
 
 export const TEAM_MEMBERS: Record<Team, string[]> = {
-  [Team.GROUP_A]: ['朱雨婷', '黄烁月'],
-  [Team.GROUP_B]: ['李杨', '程晔', '朱思雨', '陈婧'],
-  [Team.GROUP_C]: ['郑倩君', '王星宇', '阿部'],
-  [Team.GROUP_D]: ['钱杭琪', '齐曼夷', '桂丽丹'],
+  [Team.GROUP_A]: [],
+  [Team.GROUP_B]: [],
+  [Team.GROUP_C]: [],
+  [Team.GROUP_D]: [],
 };
 
 export const TEAM_LEADERS: Record<Team, string> = {
-  [Team.GROUP_A]: '朱雨婷',
-  [Team.GROUP_B]: '李杨',
-  [Team.GROUP_C]: '郑倩君',
-  [Team.GROUP_D]: '钱杭琪',
+  [Team.GROUP_A]: '',
+  [Team.GROUP_B]: '',
+  [Team.GROUP_C]: '',
+  [Team.GROUP_D]: '',
 };
 
 export const ALL_TEAMS: Team[] = [Team.GROUP_A, Team.GROUP_B, Team.GROUP_C, Team.GROUP_D];

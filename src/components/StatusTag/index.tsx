@@ -1,7 +1,8 @@
 import { Tag } from 'antd';
-import { TaskStatus } from '@/constants';
+import { getTaskStatusLabel, TaskStatus } from '@/constants';
 
 const STATUS_COLOR: Record<TaskStatus, string> = {
+  [TaskStatus.PENDING_INFO]: '#b58c62',
   [TaskStatus.PENDING]: '#ddd3c9',
   [TaskStatus.IN_PROGRESS]: '#806c79',
   [TaskStatus.DATA_DONE]: '#c1a0ac',
@@ -11,5 +12,5 @@ const STATUS_COLOR: Record<TaskStatus, string> = {
 };
 
 export default function StatusTag({ status }: { status: TaskStatus }) {
-  return <Tag color={STATUS_COLOR[status]}>{status}</Tag>;
+  return <Tag color={STATUS_COLOR[status]}>{getTaskStatusLabel(status)}</Tag>;
 }

@@ -8,6 +8,7 @@ import { getAllDocuments } from '@/services/documentService';
 import { getRescanRecords } from '@/services/rescanService';
 import { getTeamOverviewFacts, TeamOverviewFacts } from '@/services/statsService';
 import DifficultyStars from '@/components/DifficultyStars';
+import { useActor } from '@/contexts/ActorContext';
 
 type ComparisonRow = TeamOverviewFacts['activeTaskDetails'][number] & {
   key: string;
@@ -37,13 +38,17 @@ function DifficultyBreakdown({ facts }: { facts: TeamOverviewFacts }) {
 export default function Overview() {
   const [teams, setTeams] = useState<TeamOverviewFacts[]>([]);
   const navigate = useNavigate();
+  const { actor } = useActor();
 
   useEffect(() => {
-    Promise.all([getTasks(), getAllDocuments(), getRescanRecords()])
-      .then(([tasks, docs, rescans]) => setTeams(getTeamOverviewFacts(tasks, docs, rescans)));
-  }, []);
+    Promise.all([getTasks(), getAllDocuments(), getRescanRecords()]).then(([tasks, docs, rescans]) => {
+      const scopedTasks = actor.role === '管理员' ? tasks : actor.role === '组长' ? tasks.filter(task => task.team === actor.team) : tasks.filter(task => task.assignee === actor.name || task.participantNames?.includes(actor.name));
+      const shownTeams = actor.role === '管理员' ? getTeamOverviewFacts(scopedTasks, docs, rescans) : getTeamOverviewFacts(scopedTasks, docs, rescans).filter(team => team.team === actor.team);
+      setTeams(shownTeams);
+    });
+  }, [actor]);
 
-  const riskRows = useMemo(() => teams.flatMap(team => team.tasks.filter(task => task.alerts.length).map(task => ({ ...task, teamName: team.team })))
+  const riskRows = useMemo(() => teams.flatMap(team => team.tasks.filter(task => task.alerts.length || (task.deadline && new Date(task.deadline) < new Date(new Date().toDateString()))).map(task => ({ ...task, teamName: team.team })))
     .sort((a, b) => b.alerts.length - a.alerts.length || a.progress - b.progress), [teams]);
   const comparisonRows = useMemo<ComparisonRow[]>(() => teams.flatMap(team => {
     const groupTasks = team.activeTaskDetails;
@@ -51,11 +56,15 @@ export default function Overview() {
     return groupTasks.map((task, index) => ({ ...task, key: task.id, teamName: team.team, leader: team.leader, teamRowSpan: index === 0 ? groupTasks.length : 0 }));
   }), [teams]);
 
-  return <div>
-    <div className="page-title-row"><div><div className="eyebrow">OPERATIONS OVERVIEW</div><h2>四组作业总览</h2><p>用任务事实看见各组的规模、难度、平台进度和需处理事项。</p></div><div className="overview-date-note">实时任务视图<br /><strong>不含临时评分</strong></div></div>
-    <Alert showIcon type="info" className="overview-info" message="“本周管理动作”仅统计已上传文档和已登记回扫；文档验收和标准工作量规则接入后，将在此基础上补充。" />
+  const workspaceTitle = actor.role === '管理员' ? '各组作业总览' : actor.role === '组长' ? `${actor.team}工作台` : `早上好，${actor.name}`;
+  const workspaceDescription = actor.role === '管理员' ? '用任务事实看见各组的规模、难度、平台进度和需处理事项。' : actor.role === '组长' ? '聚焦本组任务、验收与成员协作，优先处理临期和待确认事项。' : '查看我的任务、待补交付和待组长确认的工作记录。';
+  const scopeLabel = actor.role === '管理员' ? '各组' : actor.role === '组长' ? '本组' : '我的';
 
-    <Card className="overview-summary-card" title={<><span>四组进行中任务明细</span><small>每个任务独立展示，便于横向核对</small></>}>
+  return <div>
+    <div className="page-title-row"><div><div className="eyebrow">{actor.role === '管理员' ? 'GLOBAL WORKSPACE' : 'MY WORKSPACE'}</div><h2>{workspaceTitle}</h2><p>{workspaceDescription}</p></div><div className="overview-date-note">实时任务视图<br /><strong>不含临时评分</strong></div></div>
+    <Alert showIcon type="info" className="overview-info" message={actor.role === '组员' ? '工作记录提交后，需要组长确认才会计入本周工作量。' : '“本周管理动作”仅统计已上传文档和已登记回扫；文档验收和标准工作量规则接入后，将在此基础上补充。'} />
+
+    <Card className="overview-summary-card" title={<><span>{scopeLabel}进行中任务明细</span><small>每个任务独立展示，便于横向核对</small></>}>
       <Table size="small" rowKey="key" pagination={false} dataSource={comparisonRows} scroll={{ x: 1100 }} columns={[
         { title: '小组', dataIndex: 'teamName', width: 155, render: (team: Team, row: ComparisonRow) => <span style={{ color: TEAM_COLORS[team], fontWeight: 600 }}>{team}<br /><span style={{ color: 'var(--ink-soft)', fontWeight: 400 }}>组长：{row.leader}</span></span>, onCell: (row: ComparisonRow) => ({ rowSpan: row.teamRowSpan }) },
         { title: '任务 ID', dataIndex: 'platformTaskId', width: 185, render: (value: string) => value || <Tag>待补充</Tag> },
@@ -77,6 +86,7 @@ export default function Overview() {
           </Row>
           <div className="difficulty-panel"><span>任务难度分布</span><DifficultyBreakdown facts={team} /></div>
           <div className="action-strip"><span>本周管理动作</span><Tag>规则/需求文档 {team.weeklyActions.ruleOrRequirementUploads}</Tag><Tag>报告 {team.weeklyActions.reportUploads}</Tag><Tag>回扫 {team.weeklyActions.rescanRecords}</Tag></div>
+          <div className="action-strip"><span>时限风险</span><Tag color={team.overdueTasks ? 'error' : 'success'}>逾期 {team.overdueTasks} 个</Tag><Tag>逾期率 {Math.round(team.overdueRate * 100)}%</Tag><Tag color={team.riskTasks ? 'warning' : 'success'}>需关注 {team.riskTasks} 个</Tag></div>
           <div className="section-kicker">当前重点任务</div>
           {team.tasks.length ? team.tasks.map(task => <div key={task.id} onClick={() => navigate(`/tasks/${task.id}`)} className={`task-focus-item ${task.alerts.length ? 'is-risk' : ''}`}>
             <div className="task-focus-head"><span>{task.name}</span>{task.alerts.length ? <WarningFilled /> : null}</div>
@@ -87,7 +97,7 @@ export default function Overview() {
       </Col>)}
     </Row>
 
-    <Card className="overview-summary-card global-risk-card" title={<><span>全局重点任务</span><small>优先查看进度、时限或文档存在风险的任务</small></>}>
+    <Card className="overview-summary-card global-risk-card" title={<><span>{scopeLabel}重点任务</span><small>优先查看进度、时限或文档存在风险的任务</small></>}>
       <Table size="small" rowKey="id" pagination={false} dataSource={riskRows} locale={{ emptyText: '当前没有风险任务' }} columns={[
         { title: '小组', dataIndex: 'teamName', width: 120 }, { title: '任务名称', dataIndex: 'name', width: 260, render: (name: string, task: any) => <a onClick={() => navigate(`/tasks/${task.id}`)}>{name}</a> },
         { title: '难度', dataIndex: 'difficulty', width: 115, render: (value: number) => <DifficultyStars value={value} readOnly /> }, { title: '数据量', dataIndex: 'dataVolume', width: 90, render: (value: number) => `${value.toLocaleString()} 条` },

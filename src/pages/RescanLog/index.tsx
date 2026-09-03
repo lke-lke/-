@@ -7,12 +7,15 @@ import { getRescanRecords, createRescanRecord } from '@/services/rescanService';
 import { Task } from '@/types';
 import { getTasks } from '@/services/taskService';
 import dayjs from 'dayjs';
+import { useActor } from '@/contexts/ActorContext';
 
 export default function RescanLog() {
   const [records, setRecords] = useState<RescanRecord[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
+  const { actor } = useActor();
+  const canManage = actor.role !== '组员';
 
   useEffect(() => {
     getRescanRecords().then(setRecords);
@@ -64,9 +67,7 @@ export default function RescanLog() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
         <h2 style={{ margin: 0 }}>回扫/变更登记台账</h2>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
-          新建回扫登记
-        </Button>
+        {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>新建回扫登记</Button>}
       </div>
 
       <Table

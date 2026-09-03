@@ -17,7 +17,8 @@ CREATE TABLE public.tasks (
   data_volume INTEGER DEFAULT 0,
   workforce INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  deadline TIMESTAMPTZ NOT NULL,
+  deadline TIMESTAMPTZ,
+  expected_deadline TIMESTAMPTZ,
   status TEXT NOT NULL DEFAULT '待开始',
   platform_task_id TEXT,
   rule_doc_link TEXT,
@@ -27,6 +28,10 @@ CREATE TABLE public.tasks (
   remark TEXT,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- 升级既有环境时执行：允许台账任务先入库，再由组长完善时间字段。
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS expected_deadline TIMESTAMPTZ;
+ALTER TABLE public.tasks ALTER COLUMN deadline DROP NOT NULL;
 
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "所有人可读" ON public.tasks FOR SELECT USING (true);
@@ -176,6 +181,43 @@ ALTER TABLE public.documents
   ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS review_comment TEXT;
 
+-- 二级审核链路：组长提交管理员审核，驳回后回流至组长待处理返修。
+ALTER TABLE public.documents
+  ADD COLUMN IF NOT EXISTS admin_review_status TEXT NOT NULL DEFAULT 'not_submitted' CHECK (admin_review_status IN ('not_submitted', 'pending', 'approved', 'rejected')),
+  ADD COLUMN IF NOT EXISTS submitted_to_admin_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS admin_reviewed_by TEXT,
+  ADD COLUMN IF NOT EXISTS admin_reviewed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS admin_review_comment TEXT,
+  ADD COLUMN IF NOT EXISTS admin_revision_count INTEGER NOT NULL DEFAULT 0;
+
+-- 动态双路线审核：组长首次验收决定是否进入管理员二级审核；一旦进入不可降级。
+ALTER TABLE public.documents
+  ADD COLUMN IF NOT EXISTS review_route TEXT NOT NULL DEFAULT 'undecided' CHECK (review_route IN ('undecided', 'leader_only', 'leader_then_admin')),
+  ADD COLUMN IF NOT EXISTS workflow_status TEXT NOT NULL DEFAULT 'pending_leader_review' CHECK (workflow_status IN ('pending_leader_review', 'member_revision_required', 'pending_admin_review', 'leader_revision_required', 'completed_by_leader', 'completed_by_admin')),
+  ADD COLUMN IF NOT EXISTS leader_rejection_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS final_approval_level TEXT CHECK (final_approval_level IN ('leader', 'admin')),
+  ADD COLUMN IF NOT EXISTS completed_by TEXT,
+  ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS root_document_id UUID REFERENCES public.documents(id);
+
+CREATE TABLE IF NOT EXISTS public.document_review_events (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
+  root_document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
+  task_id UUID REFERENCES public.tasks(id) ON DELETE CASCADE,
+  actor TEXT NOT NULL,
+  actor_role TEXT NOT NULL CHECK (actor_role IN ('管理员', '组长', '组员')),
+  action TEXT NOT NULL CHECK (action IN ('member_submitted', 'leader_rejected', 'leader_completed', 'leader_submitted_admin', 'admin_rejected', 'admin_completed', 'leader_returned_member', 'leader_resubmitted_admin')),
+  from_status TEXT,
+  to_status TEXT NOT NULL,
+  comment TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS document_review_events_root_idx ON public.document_review_events(root_document_id, created_at);
+ALTER TABLE public.document_review_events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "交付物审核事件所有人可读" ON public.document_review_events FOR SELECT USING (true);
+CREATE POLICY "认证用户可写交付物审核事件" ON public.document_review_events FOR INSERT WITH CHECK (true);
+
 CREATE TABLE public.document_reviews (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
@@ -294,6 +336,38 @@ ALTER TABLE public.document_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rule_change_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.task_management_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.task_contributions ENABLE ROW LEVEL SECURITY;
+
+-- P0：任务关系库、字段变更与成员贡献确认（可在既有扩展 SQL 后执行）
+CREATE TABLE IF NOT EXISTS public.task_relations (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  ownership TEXT NOT NULL,
+  main_task TEXT NOT NULL DEFAULT '-',
+  linked_task TEXT NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(ownership, main_task, linked_task)
+);
+
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS relation_id UUID REFERENCES public.task_relations(id);
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS main_task_snapshot TEXT;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS linked_task_snapshot TEXT;
+
+ALTER TABLE public.task_contributions ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'removed'));
+ALTER TABLE public.task_contributions ADD COLUMN IF NOT EXISTS confirmed_by TEXT;
+ALTER TABLE public.task_contributions ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS public.task_field_changes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  task_id UUID REFERENCES public.tasks(id) ON DELETE CASCADE,
+  field TEXT NOT NULL,
+  before_value JSONB,
+  after_value JSONB,
+  changed_by TEXT NOT NULL,
+  changed_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS task_relations_tree_idx ON public.task_relations(ownership, main_task, linked_task) WHERE active = true;
+CREATE INDEX IF NOT EXISTS task_field_changes_task_idx ON public.task_field_changes(task_id, changed_at DESC);
 ALTER TABLE public.task_settlements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.import_batches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.import_rows ENABLE ROW LEVEL SECURITY;
