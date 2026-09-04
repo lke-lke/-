@@ -91,7 +91,7 @@ export interface DocumentReviewEvent {
   rootDocumentId: string;
   taskId: string;
   actor: string;
-  actorRole: '管理员' | '组长' | '组员';
+  actorRole: '超级管理员' | '管理员' | '组长' | '组员';
   action: 'member_submitted' | 'leader_rejected' | 'leader_completed' | 'leader_submitted_admin' | 'admin_rejected' | 'admin_completed' | 'leader_returned_member' | 'leader_resubmitted_admin';
   fromStatus?: Document['workflowStatus'];
   toStatus: NonNullable<Document['workflowStatus']>;

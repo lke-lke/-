@@ -13,7 +13,7 @@ import { getRescanRecords } from '@/services/rescanService';
 import { addTaskContribution, confirmTaskContribution, confirmTaskSettlement, contributionEvidenceLabel, getDifficultyRevisions, getTaskContributions, getTaskSettlement, isOtherDeliverable, removeTaskContribution, saveFinalDifficulty } from '@/services/settlementService';
 import { computeNextStatus } from '@/utils/status';
 import { addTaskFieldChanges, getTaskFieldChanges } from '@/services/taskChangeService';
-import { useActor } from '@/contexts/ActorContext';
+import { isGlobalManagerRole, isSuperAdminRole, useActor } from '@/contexts/ActorContext';
 import { getTaskRelations } from '@/services/taskRelationService';
 
 type EvidenceType = NonNullable<TaskContribution['evidenceType']>;
@@ -87,9 +87,11 @@ export default function TaskDetail() {
   if (!task) return <div>任务不存在</div>;
 
   const requiredDocs = REQUIRED_DOCS[task.taskType] || [];
-  const canManageTask = actor.role === '管理员' || actor.role === '组长';
-  const canManageThisTeam = canManageTask && (actor.role === '管理员' || actor.team === task.team);
-  const canEditOwnWork = actor.role === '组员';
+  const isGlobalManager = isGlobalManagerRole(actor.role);
+  const isSuperAdmin = isSuperAdminRole(actor.role);
+  const canManageTask = isGlobalManager || actor.role === '组长';
+  const canManageThisTeam = canManageTask && (isGlobalManager || actor.team === task.team);
+  const canEditOwnWork = actor.role === '组员' || isSuperAdmin;
   const currentDocs = Array.from(docs.reduce((latest, document) => {
     const key = document.rootDocumentId || document.id;
     const current = latest.get(key);
@@ -211,7 +213,7 @@ export default function TaskDetail() {
         { title: '文档类型', dataIndex: 'docType', width: 105, render: (value: string) => <Tag>{value}</Tag> }, { title: '文档名称', dataIndex: 'name', width: 210 }, { title: '版本', width: 70, render: (doc: Document) => `V${doc.version || 1}` }, { title: '上传人', dataIndex: 'uploader', width: 80 }, { title: '上传时间', dataIndex: 'uploadedAt', width: 100 },
         { title: '验收状态', width: 135, render: (doc: Document) => { const value = documentWorkflowStatus[doc.workflowStatus || 'completed_by_leader']; return <Tag color={value.color}>{value.label}</Tag>; } },
         { title: '验收人', width: 85, render: (doc: Document) => doc.reviewedBy || '-' }, { title: '链接', width: 65, render: (doc: Document) => <a href={doc.link} target="_blank" rel="noreferrer">查看</a> },
-        { title: '操作', width: 155, render: (doc: Document) => doc.workflowStatus === 'pending_leader_review' && actor.role === '组长' && actor.team === task.team ? <Button size="small" type="link" onClick={() => openReview(doc)}>验收并选择路线</Button> : doc.workflowStatus === 'pending_admin_review' && actor.role === '管理员' ? <Button size="small" type="link" onClick={() => navigate('/management-ledger')}>前往审核中心</Button> : doc.workflowStatus === 'member_revision_required' && actor.role === '组员' && doc.uploader === actor.name ? <Button size="small" danger type="link" onClick={() => { setDocType(doc.docType); setUploadModalOpen(true); }}>上传返修版</Button> : doc.workflowStatus === 'leader_revision_required' && actor.role === '组长' ? <Button size="small" type="link" onClick={() => navigate('/management-ledger')}>处理管理员驳回</Button> : isDocumentFinallyApproved(doc) ? <span>已完成</span> : '-' },
+        { title: '操作', width: 155, render: (doc: Document) => doc.workflowStatus === 'pending_leader_review' && ((actor.role === '组长' && actor.team === task.team) || isSuperAdmin) ? <Button size="small" type="link" onClick={() => openReview(doc)}>验收并选择路线</Button> : doc.workflowStatus === 'pending_admin_review' && isGlobalManager ? <Button size="small" type="link" onClick={() => navigate('/management-ledger')}>前往审核中心</Button> : doc.workflowStatus === 'member_revision_required' && ((actor.role === '组员' && doc.uploader === actor.name) || isSuperAdmin) ? <Button size="small" danger type="link" onClick={() => { setDocType(doc.docType); setUploadModalOpen(true); }}>上传返修版</Button> : doc.workflowStatus === 'leader_revision_required' && (actor.role === '组长' || isSuperAdmin) ? <Button size="small" type="link" onClick={() => navigate('/management-ledger')}>处理管理员驳回</Button> : isDocumentFinallyApproved(doc) ? <span>已完成</span> : '-' },
       ]} />
       <div className="revision-note">返修统计：本任务累计上传 <strong>{docs.length}</strong> 份文档，其中被驳回 <strong>{docs.filter(doc => doc.status === 'rejected').length}</strong> 次；同类文档再次上传会自动递增版本号。</div></div>
 

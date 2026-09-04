@@ -6,7 +6,7 @@ import { ALL_TEAMS, TEAM_MEMBERS, TaskStatus } from '@/constants';
 import { Document, Task } from '@/types';
 import { getAllDocuments, handleAdminRejection, leaderReviewDocument, reviewDocumentByAdmin } from '@/services/documentService';
 import { getTasks } from '@/services/taskService';
-import { useActor } from '@/contexts/ActorContext';
+import { isGlobalManagerRole, useActor } from '@/contexts/ActorContext';
 import { useNavigate } from 'react-router-dom';
 
 type TodoKind = 'incomplete' | 'document' | 'revision' | 'risk';
@@ -41,7 +41,7 @@ export default function ManagementLedger() {
 
   useEffect(() => { getTasks().then(setTasks); getAllDocuments().then(setDocuments); }, []);
 
-  const isAdmin = actor.role === '管理员';
+  const isAdmin = isGlobalManagerRole(actor.role);
   const groupTasks = useMemo(() => tasks.filter(task => isAdmin ? !selectedTeam || task.team === selectedTeam : task.team === actor.team), [tasks, actor.team, isAdmin, selectedTeam]);
   const taskById = useMemo(() => new Map(groupTasks.map(task => [task.id, task])), [groupTasks]);
   const latestDocuments = useMemo(() => Array.from(documents.reduce((latest, document) => {

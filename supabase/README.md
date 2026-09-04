@@ -33,7 +33,7 @@ APP_SUPABASE_ANON_KEY=粘贴本地_anon_key
 npm run dev:supabase
 ```
 
-前端地址为 `http://localhost:3015`，Supabase Studio 为 `http://localhost:54323`。本地模式采用无感匿名会话，不显示密码登录页；管理员、组长、组员仍通过页面顶部选择。切换结果写入匿名用户的 `local_demo_role`，仅供本地流程联调。
+前端地址为 `http://localhost:3015`，Supabase Studio 为 `http://localhost:54323`。本地模式采用无感匿名会话，不显示密码登录页；超级管理员、管理员、组长、组员仍通过页面顶部选择。切换结果写入匿名用户的 `local_demo_role`，仅供本地流程联调。超级管理员可切换为三种角色的只读预览视角，实际操作身份始终保留为超级管理员。
 
 ## 日常变更流程
 
@@ -65,6 +65,7 @@ npm run build
 | `20260903001000` | 多人任务关系与写入人自动补全 |
 | `20260903001100` | 客观工作标签的本人提交/管理确认 RPC |
 | `20260903001200` | 无密码成员名册、组长维护 RPC 与后续 1d 账号绑定位置 |
+| `20260904000100` | 可配置超级管理员、三角色只读预览支持、角色停用 RPC 与超级管理员审计字段 |
 
 ## 1d 部署
 
@@ -73,6 +74,12 @@ npm run build
 3. 1d/钉钉身份写入 `auth.users` 后，触发器会创建 `app_users` 和默认 `member` 角色；管理员再分配 `admin`/`leader` 和小组。
 4. 第一个管理员只能由可信后端或 SQL 管理员使用 `service_role` 调用 `bootstrap_first_admin(auth_user_id)`。
 5. 外部调度数据通过 `integration_connections`、`external_sync_runs`、`external_task_mappings` 留痕；不得覆盖本平台的文档、人工审核、回扫和结项事实。
+
+## 超级管理员的上线后处置
+
+- 开发/联调阶段可给可信运维账号分配 `super_admin`，用于跨组排障、全量数据核验和角色视角检查。
+- 正式上线后，如果不再需要该入口，由可信运维账号执行 `select public.set_role_definition_active('super_admin', false);`。该操作写入 `audit_logs`，只停用角色能力，不删除任何业务数据。
+- 如需彻底收口，再由受控数据库变更移除 `user_roles` 中的 `super_admin` 分配；不要删除既有 migration 或审计记录。
 
 ## CLI 版本说明
 

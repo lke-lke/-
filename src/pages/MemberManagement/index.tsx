@@ -3,11 +3,11 @@ import { Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, me
 import { EditOutlined, PlusOutlined, UsergroupAddOutlined } from '@ant-design/icons';
 import { ALL_TEAMS, Team } from '@/constants';
 import { getManagedMembers, ManagedMember, saveManagedMember, toggleManagedMember } from '@/services/memberService';
-import { useActor } from '@/contexts/ActorContext';
+import { isGlobalManagerRole, useActor } from '@/contexts/ActorContext';
 
 export default function MemberManagement() {
   const [members, setMembers] = useState<ManagedMember[]>([]); const [open, setOpen] = useState(false); const [editing, setEditing] = useState<ManagedMember | null>(null); const [form] = Form.useForm();
-  const { actor } = useActor(); const canManage = actor.role !== '组员'; const canManageMember = (item: ManagedMember) => actor.role === '管理员' || item.team === actor.team;
+  const { actor } = useActor(); const canManage = actor.role !== '组员'; const canManageMember = (item: ManagedMember) => isGlobalManagerRole(actor.role) || item.team === actor.team;
   const load = () => getManagedMembers().then(setMembers); useEffect(() => { load(); }, []);
   const edit = (item?: ManagedMember) => { setEditing(item || null); form.setFieldsValue(item || { role: '组员', status: '在职' }); setOpen(true); };
   const submit = async () => { try { const values = await form.validateFields(); await saveManagedMember({ ...values, team: actor.role === '组长' ? actor.team : values.team, id: editing?.id }); message.success(editing ? '成员信息已更新' : '成员已添加'); setOpen(false); load(); } catch {} };

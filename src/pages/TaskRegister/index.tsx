@@ -9,7 +9,7 @@ import DifficultyStars from '@/components/DifficultyStars';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { getTaskRelations } from '@/services/taskRelationService';
-import { useActor } from '@/contexts/ActorContext';
+import { isGlobalManagerRole, useActor } from '@/contexts/ActorContext';
 import TaskCard from '@/components/TaskCard';
 
 const CUSTOM = '__custom__';
@@ -37,6 +37,7 @@ export default function TaskRegister() {
   const [filterTeam, setFilterTeam] = useState('');
   const [filterAssignee, setFilterAssignee] = useState('');
   const { actor } = useActor();
+  const isGlobalManager = isGlobalManagerRole(actor.role);
   const canManage = actor.role !== '组员';
   const navigate = useNavigate();
 
@@ -51,13 +52,13 @@ export default function TaskRegister() {
     .filter(item => item.ownership === selectedOwnership && (selectedMainTask === TEMPORARY ? normalizeMainTask(item.mainTask) === TEMPORARY : item.mainTask === selectedMainTask))
     .map(item => item.linkedTask))], [relations, selectedOwnership, selectedMainTask]);
 
-  const visibleTasks = actor.role === '管理员'
+  const visibleTasks = isGlobalManager
     ? tasks
     : actor.role === '组长'
       ? tasks.filter(task => task.team === actor.team)
       : tasks.filter(task => task.assignee === actor.name || task.participantNames?.includes(actor.name));
   const pendingCompletion = visibleTasks.filter(task => task.status === TaskStatus.PENDING_INFO);
-  const pageTitle = actor.role === '管理员' ? '任务全景' : actor.role === '组长' ? '本组任务' : '我的任务';
+  const pageTitle = isGlobalManager ? '任务全景' : actor.role === '组长' ? '本组任务' : '我的任务';
   const boardTasks = visibleTasks.filter(task => (!filterTeam || task.team === filterTeam) && (!filterAssignee || task.assignee === filterAssignee));
   const assigneeOptions = [...new Set(visibleTasks.filter(task => !filterTeam || task.team === filterTeam).map(task => task.assignee).filter(Boolean))];
   const tasksByStage = FLOW_STAGES.reduce((result, stage) => {
@@ -131,7 +132,7 @@ export default function TaskRegister() {
     { title: '进度', dataIndex: 'progress', width: 70, render: (value: number) => `${Math.round(value * 100)}%` },
     { title: '难度', dataIndex: 'difficulty', width: 120, render: (value: number) => value ? <DifficultyStars value={value} readOnly /> : '-' },
   ];
-  const columns = actor.role === '管理员'
+  const columns = isGlobalManager
     ? [...hierarchyColumns, taskNameColumn, statusColumn, ...executionColumns]
     : [taskNameColumn, statusColumn, ...hierarchyColumns, ...executionColumns];
 
@@ -151,7 +152,7 @@ export default function TaskRegister() {
       <div className="embedded-flow-toolbar">
         <div><h3>任务流转看板</h3><p>待完善任务归入“待开始”；数据完成、待交付和待验收统一归入“待确认”。</p></div>
         <Space wrap>
-          {actor.role === '管理员' && <Select allowClear placeholder="筛选小组" value={filterTeam || undefined} style={{ width: 150 }} options={ALL_TEAMS.map(value => ({ label: value, value }))} onChange={value => { setFilterTeam(value || ''); setFilterAssignee(''); }} />}
+          {isGlobalManager && <Select allowClear placeholder="筛选小组" value={filterTeam || undefined} style={{ width: 150 }} options={ALL_TEAMS.map(value => ({ label: value, value }))} onChange={value => { setFilterTeam(value || ''); setFilterAssignee(''); }} />}
           <Select allowClear placeholder="筛选负责人" value={filterAssignee || undefined} style={{ width: 150 }} options={assigneeOptions.map(value => ({ label: value, value }))} onChange={value => setFilterAssignee(value || '')} />
         </Space>
       </div>
@@ -159,7 +160,7 @@ export default function TaskRegister() {
         {FLOW_STAGES.map(stage => <section className={`embedded-flow-column stage-${FLOW_STAGES.indexOf(stage) + 1}`} key={stage}>
           <div className="embedded-flow-column-title"><strong>{stage}</strong><span>{tasksByStage[stage].length}</span></div>
           <div className="embedded-flow-column-body">
-            {tasksByStage[stage].map(task => <TaskCard key={task.id} task={task} showContext showTeam={actor.role === '管理员'} preferExpectedDeadline onClick={() => navigate(`/tasks/${task.id}`)} />)}
+            {tasksByStage[stage].map(task => <TaskCard key={task.id} task={task} showContext showTeam={isGlobalManager} preferExpectedDeadline onClick={() => navigate(`/tasks/${task.id}`)} />)}
             {!tasksByStage[stage].length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务" />}
           </div>
         </section>)}

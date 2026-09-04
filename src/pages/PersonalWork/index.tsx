@@ -5,7 +5,7 @@ import { ALL_MEMBERS, ALL_TEAMS, Team } from '@/constants';
 import { Task, TaskContribution } from '@/types';
 import { getAllTaskContributions } from '@/services/settlementService';
 import { getTasks } from '@/services/taskService';
-import { useActor } from '@/contexts/ActorContext';
+import { isGlobalManagerRole, useActor } from '@/contexts/ActorContext';
 
 export default function PersonalWork() {
   const [tasks, setTasks] = useState<Task[]>([]); const [items, setItems] = useState<TaskContribution[]>([]); const [member, setMember] = useState<string>(); const [team, setTeam] = useState<Team>(); const [periodMode, setPeriodMode] = useState<'日' | '周' | '月'>('周'); const [anchorDate, setAnchorDate] = useState(dayjs());
@@ -14,7 +14,7 @@ export default function PersonalWork() {
   const start = periodMode === '日' ? anchorDate.startOf('day') : periodMode === '周' ? anchorDate.startOf('week') : anchorDate.startOf('month');
   const end = periodMode === '日' ? anchorDate.endOf('day') : periodMode === '周' ? anchorDate.endOf('week') : anchorDate.endOf('month');
   const periodLabel = periodMode === '日' ? '当日' : periodMode === '周' ? '本周' : '本月';
-  const rows = useMemo(() => items.filter(item => item.status === 'confirmed').filter(item => actor.role !== '组员' || item.member === actor.name).filter(item => (!member || item.member === member)).filter(item => { const task = tasks.find(row => row.id === item.taskId); const permittedTeam = actor.role === '管理员' || task?.team === actor.team; return permittedTeam && (!team || task?.team === team); }).filter(item => dayjs(item.confirmedAt || item.attachedAt).isAfter(start.subtract(1, 'day')) && dayjs(item.confirmedAt || item.attachedAt).isBefore(end.add(1, 'day'))).map(item => ({ ...item, task: tasks.find(task => task.id === item.taskId) })), [items, member, team, tasks, actor, start.valueOf(), end.valueOf()]);
+  const rows = useMemo(() => items.filter(item => item.status === 'confirmed').filter(item => actor.role !== '组员' || item.member === actor.name).filter(item => (!member || item.member === member)).filter(item => { const task = tasks.find(row => row.id === item.taskId); const permittedTeam = isGlobalManagerRole(actor.role) || task?.team === actor.team; return permittedTeam && (!team || task?.team === team); }).filter(item => dayjs(item.confirmedAt || item.attachedAt).isAfter(start.subtract(1, 'day')) && dayjs(item.confirmedAt || item.attachedAt).isBefore(end.add(1, 'day'))).map(item => ({ ...item, task: tasks.find(task => task.id === item.taskId) })), [items, member, team, tasks, actor, start.valueOf(), end.valueOf()]);
   const tagCounts = useMemo(() => rows.reduce((result, item) => ({ ...result, [item.tag]: (result[item.tag] || 0) + 1 }), {} as Record<string, number>), [rows]);
   const isMember = actor.role === '组员'; const isLeader = actor.role === '组长';
   const pageTitle = isMember ? '我的工作记录' : isLeader ? '本组工作记录' : '人员作业明细';

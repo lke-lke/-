@@ -36,6 +36,10 @@ body { margin: 0; background: var(--canvas); color: var(--ink); font-family: "Pi
 .app-content.ant-layout-content { min-width: 0; background: var(--canvas); padding: 34px 34px 48px; }
 .actor-bar { height: 42px; display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding: 0 34px; color: var(--ink-soft); font-size: 12px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.52); }
 .actor-bar .ant-select { min-width: 150px; }
+.actor-preview-label { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; color: var(--lavender-deep); }
+.preview-mode-banner { margin: 14px 34px 0; padding: 10px 14px; border: 1px solid var(--lavender); border-radius: 12px; background: #f4e8ed; color: var(--ink-soft); font-size: 13px; }
+.preview-readonly-content { position: relative; opacity: .82; }
+.preview-readonly-content::after { content: ''; position: absolute; inset: 0; z-index: 20; cursor: not-allowed; }
 .work-tag-summary { display: flex; flex-wrap: wrap; gap: 10px; min-height: 30px; align-items: center; }
 .task-detail-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; padding: 9px; border-radius: 12px; background: #f8eff1; }
 .task-detail-nav a { padding: 4px 8px; border-radius: 8px; font-size: 12px; color: var(--ink-soft) !important; }
