@@ -20,7 +20,7 @@ type ComparisonRow = TeamOverviewFacts['activeTaskDetails'][number] & {
 };
 
 const TEAM_COLORS: Record<Team, string> = {
-  [Team.GROUP_A]: '#806c79', [Team.GROUP_B]: '#928e5e', [Team.GROUP_C]: '#b97d7b', [Team.GROUP_D]: '#c1a0ac',
+  [Team.GROUP_B]: '#806c79', [Team.GROUP_C]: '#928e5e', [Team.GROUP_D]: '#b97d7b',
 };
 const STATUS_COLUMNS = [
   { key: '待开始', color: '#ddd3c9' },

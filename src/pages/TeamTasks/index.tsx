@@ -12,7 +12,7 @@ import dayjs from 'dayjs';
 const taskMatch = (task: Task, relation: TaskRelation) => task.relationId === relation.id || task.linkedTask === relation.linkedTask || task.taskGroup === relation.linkedTask || task.name.includes(relation.linkedTask);
 
 export default function TeamTasks() {
-  const [team, setTeam] = useState<Team>(Team.GROUP_A); const [tasks, setTasks] = useState<Task[]>([]); const [relations, setRelations] = useState<TaskRelation[]>([]); const navigate = useNavigate();
+  const [team, setTeam] = useState<Team>(Team.GROUP_B); const [tasks, setTasks] = useState<Task[]>([]); const [relations, setRelations] = useState<TaskRelation[]>([]); const navigate = useNavigate();
   useEffect(() => { getTasks().then(setTasks); getTaskRelations().then(setRelations); }, []);
   const groupTasks = useMemo(() => tasks.filter(task => task.team === team), [tasks, team]);
   const tree = useMemo<any[]>(() => {

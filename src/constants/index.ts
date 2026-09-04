@@ -111,27 +111,24 @@ export const REQUIRED_DOCS: Record<TaskType, DocType[]> = {
 };
 
 export enum Team {
-  GROUP_A = '业务助理A组',
   GROUP_B = '业务助理B组',
   GROUP_C = '业务助理C组',
   GROUP_D = '业务助理D组',
 }
 
 export const TEAM_MEMBERS: Record<Team, string[]> = {
-  [Team.GROUP_A]: [],
-  [Team.GROUP_B]: [],
-  [Team.GROUP_C]: [],
-  [Team.GROUP_D]: [],
+  [Team.GROUP_B]: ['李杨', '程晔', '陈婧', '廖嘉裕', '叶子涵'],
+  [Team.GROUP_C]: ['王星宇', '郑倩君', '成妍', '刘美彤', '牛佳欣', '徐金云'],
+  [Team.GROUP_D]: ['钱杭琪', '齐曼夷', '桂丽丹', '高翔'],
 };
 
 export const TEAM_LEADERS: Record<Team, string> = {
-  [Team.GROUP_A]: '',
-  [Team.GROUP_B]: '',
-  [Team.GROUP_C]: '',
-  [Team.GROUP_D]: '',
+  [Team.GROUP_B]: '李杨',
+  [Team.GROUP_C]: '王星宇',
+  [Team.GROUP_D]: '钱杭琪',
 };
 
-export const ALL_TEAMS: Team[] = [Team.GROUP_A, Team.GROUP_B, Team.GROUP_C, Team.GROUP_D];
+export const ALL_TEAMS: Team[] = [Team.GROUP_B, Team.GROUP_C, Team.GROUP_D];
 
 export const ALL_MEMBERS = Object.values(TEAM_MEMBERS).flat();
 
