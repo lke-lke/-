@@ -103,7 +103,7 @@ export default function TaskDetail() {
 
   const handleUpload = async () => {
     if (!docType || !selectedFile) return message.warning('请选择文档类型和文件');
-    await uploadDocument({ taskId: task.id, docType, name: selectedFile.name, link: URL.createObjectURL(selectedFile), uploader: actor.name, uploadedAt: dayjs().format('YYYY-MM-DD') }, actor.role);
+    await uploadDocument({ taskId: task.id, docType, name: selectedFile.name, link: URL.createObjectURL(selectedFile), uploader: actor.name, uploadedAt: dayjs().format('YYYY-MM-DD') }, actor.role, selectedFile);
     setUploadModalOpen(false); setDocType(undefined); setSelectedFile(undefined); await load();
     message.success('文档已上传，等待组长验收后才会计入任务交付。');
   };

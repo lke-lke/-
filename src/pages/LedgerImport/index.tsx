@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Alert, Button, Card, Descriptions, Progress, Select, Space, Table, Tag, Upload, message } from 'antd';
+import { Alert, Button, Card, Descriptions, Input, Progress, Select, Space, Table, Tag, Upload, message } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
-import { LedgerPreview, previewLedger } from '@/services/ledgerImportService';
+import { commitTaskLedgerImport, LedgerPreview, previewLedger } from '@/services/ledgerImportService';
 import { ALL_TEAMS, RescanReason, TaskOwnership, TaskStatus, TaskType, Team, TEAM_LEADERS, TEAM_MEMBERS, WorkNature } from '@/constants';
 import { createTask, getTasks, updateTask } from '@/services/taskService';
 import { createRescanRecord } from '@/services/rescanService';
@@ -37,6 +37,12 @@ export default function LedgerImport() {
     if (!preview || !team || !assignee) return;
     setLoading(true);
     try {
+      if (!USE_MOCK) {
+        const batch = await commitTaskLedgerImport(preview, { team, assignee, teamLeader: TEAM_LEADERS[team], taskTypeFor: taskType });
+        setImported(`批次 ${batch?.id || ''} 已持久化：提交 ${batch?.committed_rows ?? preview.total} 条，跳过 ${batch?.skipped_rows ?? 0} 条。任务已进入“待完善”。`);
+        message.success('任务台账已通过数据库事务导入');
+        return;
+      }
       const existing = await getTasks();
       const knownKeys = new Set(existing.map(task => task.platformTaskId ? `id:${task.platformTaskId}` : `name:${normalize(task.name)}:${task.createdAt}`));
       let createdCount = 0;
@@ -97,7 +103,9 @@ export default function LedgerImport() {
       <Card title="确认导入" style={{ marginBottom: 16 }}>
         {preview.kind === 'task' ? <Space wrap>
           <Select placeholder="统一归属小组" style={{ width: 150 }} value={team} onChange={(value: Team) => { setTeam(value); setAssignee(undefined); }} options={ALL_TEAMS.map(value => ({ value, label: value }))} />
-          <Select placeholder="统一主负责人" style={{ width: 150 }} value={assignee} onChange={setAssignee} disabled={!team} options={(team ? TEAM_MEMBERS[team] : []).map(value => ({ value, label: value }))} />
+          {team && TEAM_MEMBERS[team].length > 0
+            ? <Select placeholder="统一主负责人" style={{ width: 150 }} value={assignee} onChange={setAssignee} options={TEAM_MEMBERS[team].map(value => ({ value, label: value }))} />
+            : <Input placeholder="填写统一主负责人" style={{ width: 170 }} value={assignee} onChange={event => setAssignee(event.target.value)} disabled={!team} />}
           <Button type="primary" loading={loading} disabled={!team || !assignee} onClick={importTasks}>确认导入 {preview.total} 条任务</Button>
         </Space> : <Button type="primary" loading={loading} onClick={importRescans}>导入可自动关联的借调记录</Button>}
         <div style={{ color: 'var(--ink-soft)', fontSize: 12, marginTop: 10 }}>{preview.kind === 'task' ? '台账没有当前系统的小组与主负责人字段，因此需先指定本批次归属。入库后请由对应组长在“本组任务”完成字段补齐。' : '仅导入与现有任务名称精确匹配的记录；其余记录不会被写入。'}</div>

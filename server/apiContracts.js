@@ -2,7 +2,7 @@ const API_VERSION = 'v1';
 
 const resources = [
   ['GET', '/auth/me', '读取当前已验证用户、角色和小组'],
-  ['POST', '/auth/login', '独立运行时由 OneDay Auth 执行账号密码登录'],
+  ['POST', '/auth/session', '1d 正式运行时交换宿主阿里钉 / OneDay Auth 会话；本地匿名模式不调用'],
   ['POST', '/auth/logout', '退出当前会话'],
   ['GET', '/users', '管理员读取用户、小组和角色'],
   ['POST', '/users', '筝一或组长新增本组成员'],

@@ -16,10 +16,11 @@ import PersonalWork from './pages/PersonalWork';
 import ManagementLedger from './pages/ManagementLedger';
 import MyDeliverables from './pages/MyDeliverables';
 import { ActorProvider } from './contexts/ActorContext';
+import AuthGate from './components/AuthGate';
 
 export default function App() {
   return (
-    <ActorProvider><HashRouter>
+    <ActorProvider><AuthGate><HashRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/overview" replace />} />
@@ -40,6 +41,6 @@ export default function App() {
           <Route path="rescan" element={<RescanLog />} />
         </Route>
       </Routes>
-    </HashRouter></ActorProvider>
+    </HashRouter></AuthGate></ActorProvider>
   );
 }

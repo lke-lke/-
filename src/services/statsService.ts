@@ -1,6 +1,7 @@
 import { OverviewStats, Member, Task, Document, RescanRecord } from '@/types';
 import { DocType, TaskStatus, DIFFICULTY_POINTS, ALL_TEAMS, TEAM_MEMBERS, TEAM_LEADERS, Team } from '@/constants';
 import dayjs from 'dayjs';
+import { DateRange, isDateInRange } from '@/utils/timeRange';
 
 const TODAY = dayjs();
 
@@ -34,7 +35,7 @@ export interface TeamOverviewFacts {
   avgProgress: number;
   difficultyCounts: Record<number, number>;
   unratedTasks: number;
-  weeklyActions: { ruleOrRequirementUploads: number; reportUploads: number; rescanRecords: number };
+  periodActions: { ruleOrRequirementUploads: number; reportUploads: number; rescanRecords: number };
   activeTaskDetails: Task[];
   tasks: Task[];
 }
@@ -47,11 +48,7 @@ export interface TeamTaskPeriodStats {
   statuses: Record<TaskBoardStatus, number>;
 }
 
-export function getTeamTaskPeriodStats(tasks: Task[], rescans: RescanRecord[], start: dayjs.Dayjs, end: dayjs.Dayjs): TeamTaskPeriodStats[] {
-  const isInRange = (value: string) => {
-    const date = dayjs(value);
-    return (date.isAfter(start.subtract(1, 'day')) || date.isSame(start, 'day')) && (date.isBefore(end.add(1, 'day')) || date.isSame(end, 'day'));
-  };
+function buildTeamTaskStatusStats(tasks: Task[], rescans: RescanRecord[]): TeamTaskPeriodStats[] {
   const hasActiveRescan = (taskId: string) => rescans.some(record => record.originalTaskId === taskId && !record.actualDone && record.accepted !== true);
   const getStatus = (task: Task): TaskBoardStatus => {
     if (task.status === TaskStatus.DONE) return '已完成';
@@ -61,40 +58,52 @@ export function getTeamTaskPeriodStats(tasks: Task[], rescans: RescanRecord[], s
     return '进行中';
   };
   return ALL_TEAMS.map(team => {
-    const groupTasks = tasks.filter(task => task.team === team && isInRange(task.createdAt));
+    const groupTasks = tasks.filter(task => task.team === team);
     const statuses: Record<TaskBoardStatus, number> = { 待开始: 0, 进行中: 0, 回扫中: 0, 待确认: 0, 已完成: 0 };
     groupTasks.forEach(task => { statuses[getStatus(task)] += 1; });
     return { team, total: groupTasks.length, statuses };
   });
 }
 
-const isThisWeek = (value?: string) => value ? dayjs(value).isAfter(TODAY.startOf('week').subtract(1, 'day')) : false;
+export function getTeamTaskStatusStats(tasks: Task[], rescans: RescanRecord[]): TeamTaskPeriodStats[] {
+  return buildTeamTaskStatusStats(tasks, rescans);
+}
 
-export function getTeamOverviewFacts(tasks: Task[], docs: Document[], rescans: RescanRecord[]): TeamOverviewFacts[] {
+export function getTeamTaskPeriodStats(tasks: Task[], rescans: RescanRecord[], start: dayjs.Dayjs, end: dayjs.Dayjs): TeamTaskPeriodStats[] {
+  const inRangeTasks = tasks.filter(task => {
+    const date = dayjs(task.createdAt);
+    return (date.isAfter(start.subtract(1, 'day')) || date.isSame(start, 'day')) && (date.isBefore(end.add(1, 'day')) || date.isSame(end, 'day'));
+  });
+  return buildTeamTaskStatusStats(inRangeTasks, rescans);
+}
+
+export function getTeamOverviewFacts(tasks: Task[], docs: Document[], rescans: RescanRecord[], range?: DateRange): TeamOverviewFacts[] {
   const byTaskId = new Map(tasks.map(task => [task.id, task]));
+  const actionRange: DateRange = range || [TODAY.startOf('week'), TODAY.endOf('week')];
+  const riskReferenceDate = range?.[1] || TODAY;
   return ALL_TEAMS.map(team => {
     const teamTasks = tasks.filter(task => task.team === team);
     const active = teamTasks.filter(task => task.status !== TaskStatus.DONE);
-    const teamDocs = docs.filter(doc => byTaskId.get(doc.taskId)?.team === team && isThisWeek(doc.uploadedAt));
-    const teamRescanRecords = rescans.filter(record => byTaskId.get(record.originalTaskId)?.team === team && isThisWeek(record.actualDone || record.createdAt));
+    const teamDocs = docs.filter(doc => byTaskId.get(doc.taskId)?.team === team && isDateInRange(doc.uploadedAt, actionRange));
+    const teamRescanRecords = rescans.filter(record => byTaskId.get(record.originalTaskId)?.team === team && isDateInRange(record.actualDone || record.createdAt, actionRange));
     const difficultyCounts = [1, 2, 3, 4, 5].reduce((counts, star) => {
-      counts[star] = active.filter(task => task.difficulty === star).length;
+      counts[star] = teamTasks.filter(task => task.difficulty === star).length;
       return counts;
     }, {} as Record<number, number>);
     const sortedTasks = [...active].sort((a, b) => {
       const risk = b.alerts.length - a.alerts.length;
       return risk || a.progress - b.progress || (b.difficulty || 1) - (a.difficulty || 1);
     });
-    const overdueTasks = active.filter(task => task.deadline && dayjs(task.deadline).isBefore(TODAY, 'day')).length;
+    const overdueTasks = active.filter(task => task.deadline && dayjs(task.deadline).isBefore(riskReferenceDate, 'day')).length;
     return {
       team, leader: TEAM_LEADERS[team], activeTasks: active.length,
-      activeDataVolume: active.reduce((sum, task) => sum + task.dataVolume, 0),
-      riskTasks: active.filter(task => task.alerts.length > 0 || (task.deadline && dayjs(task.deadline).isBefore(TODAY, 'day'))).length,
+      activeDataVolume: teamTasks.reduce((sum, task) => sum + task.dataVolume, 0),
+      riskTasks: active.filter(task => task.alerts.length > 0 || (task.deadline && dayjs(task.deadline).isBefore(riskReferenceDate, 'day'))).length,
       overdueTasks,
       overdueRate: active.length ? overdueTasks / active.length : 0,
       avgProgress: active.length ? active.reduce((sum, task) => sum + task.progress, 0) / active.length : 1,
-      difficultyCounts, unratedTasks: active.filter(task => !task.difficulty).length,
-      weeklyActions: {
+      difficultyCounts, unratedTasks: teamTasks.filter(task => !task.difficulty).length,
+      periodActions: {
         ruleOrRequirementUploads: teamDocs.filter(doc => [DocType.RULE, DocType.REQUIREMENT].includes(doc.docType)).length,
         reportUploads: teamDocs.filter(doc => [DocType.EVAL_REPORT, DocType.OTHER].includes(doc.docType)).length,
         rescanRecords: teamRescanRecords.length,

@@ -4,14 +4,15 @@
 
 ## authProvider
 
-- 独立运行：使用 OneDay Cloud Auth 的账号密码会话；
+- 本地 Supabase：使用自动匿名会话，不显示密码登录；仅供本机流程联调；
+- 1d 正式运行：关闭匿名登录，由宿主阿里钉 / OneDay Auth 会话提供真实身份；
 - `getCurrentUser(request)` 必须返回 OneDay 用户 ID、工号、姓名；
 - 后端据此查询 `app_users`、`user_roles` 和 `team_memberships`；
 - 不允许前端提交角色、小组或上传人来获得权限。
 
 ## repository
 
-- 使用 1d 后端安全环境中的 OneDay Cloud 数据库客户端；
+- 以 `supabase/migrations/` 为唯一数据库事实源，使用 1d 后端安全环境中的 Supabase/OneDay Cloud 数据库客户端；
 - 实现任务、文档、回扫、导入、审计的读写；
 - 每次写入均以认证用户 ID 创建 `audit_logs`；
 - `/api/v1/integration/*` 仅接受服务账号或签名请求。
@@ -20,7 +21,7 @@
 
 - 由 `/documents/upload-intents` 返回预签名上传地址或 1d 存储对象键；
 - 文件直传对象存储，API 只保存元数据；
-- 完成上传后调用 `POST /documents`，以当前认证用户自动写入上传人；
+- 完成上传后调用 `register_document_version` RPC，以当前认证用户自动写入上传人；
 - 组员只能提交本人交付物和返修版本；组长只能审核本组交付物并决定首次审核路线；管理员只能审核已由组长提交管理员路线的交付物。
 - `review_route=leader_then_admin` 一旦写入不得改回 `leader_only`。所有状态迁移必须同时写入 `document_review_events`，并分别累加组长与管理员驳回次数。
 

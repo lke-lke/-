@@ -1,4 +1,6 @@
 import { TaskRelation } from '@/types';
+import { USE_MOCK } from './db';
+import { ensureOnedayClient } from '@/onedaycloud';
 
 const aiGroups: Record<string, string[]> = {
   '线上巡检': ['线上日志-照片试穿', '赞踩情况-照片试穿'],
@@ -26,7 +28,7 @@ function seeds(ownership: string, groups: Record<string, string[]>, independent:
   Object.entries(groups).forEach(([mainTask, children]) => children.forEach((linkedTask, index) => rows.push({
     id: `${ownership}-${mainTask}-${index}`.replace(/\s/g, ''), ownership, mainTask, linkedTask, active: true, createdAt: '2026-08-01', updatedAt: '2026-08-01',
   })));
-  independent.forEach((linkedTask, index) => rows.push({ id: `${ownership}-independent-${index}`, ownership, mainTask: '-', linkedTask, active: true, createdAt: '2026-08-01', updatedAt: '2026-08-01' }));
+  independent.forEach((linkedTask, index) => rows.push({ id: `${ownership}-independent-${index}`, ownership, mainTask: '临时任务', linkedTask, active: true, createdAt: '2026-08-01', updatedAt: '2026-08-01' }));
   return rows;
 }
 
@@ -36,22 +38,48 @@ let localRelations: TaskRelation[] = [
 ];
 
 export async function getTaskRelations(ownership?: string): Promise<TaskRelation[]> {
-  return localRelations.filter(item => item.active && (!ownership || item.ownership === ownership));
+  if (USE_MOCK) return localRelations.filter(item => item.active && (!ownership || item.ownership === ownership));
+  const client = ensureOnedayClient(); if (!client) return [];
+  let query = client.supabase.from('task_relations').select('*').eq('active', true);
+  if (ownership) query = query.eq('ownership', ownership);
+  const { data, error } = await query.order('ownership').order('main_task').order('linked_task');
+  if (error) throw error;
+  return (data || []).map((row: any) => ({
+    id: row.id, ownership: row.ownership, mainTask: row.main_task,
+    linkedTask: row.linked_task, active: row.active,
+    createdAt: row.created_at, updatedAt: row.updated_at,
+  }));
 }
 
 export async function saveTaskRelation(input: Omit<TaskRelation, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }): Promise<TaskRelation> {
   const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
-  if (input.id) {
+  if (USE_MOCK && input.id) {
     const index = localRelations.findIndex(item => item.id === input.id);
     if (index >= 0) { localRelations[index] = { ...localRelations[index], ...input, updatedAt: now }; return localRelations[index]; }
   }
-  const relation: TaskRelation = { ...input, id: `relation-${Date.now()}`, createdAt: now, updatedAt: now };
-  localRelations = [...localRelations, relation];
-  return relation;
+  if (USE_MOCK) {
+    const relation: TaskRelation = { ...input, id: `relation-${Date.now()}`, createdAt: now, updatedAt: now };
+    localRelations = [...localRelations, relation];
+    return relation;
+  }
+  const client = ensureOnedayClient(); if (!client) throw new Error('Supabase 尚未配置');
+  const { data, error } = await client.supabase.rpc('upsert_task_relation', {
+    p_ownership: input.ownership, p_main_task: input.mainTask || '临时任务',
+    p_linked_task: input.linkedTask, p_id: input.id || null,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return { id: row.id, ownership: row.ownership, mainTask: row.main_task, linkedTask: row.linked_task, active: row.active, createdAt: row.created_at, updatedAt: row.updated_at };
 }
 
 export async function archiveTaskRelation(id: string): Promise<void> {
-  localRelations = localRelations.map(item => item.id === id ? { ...item, active: false, updatedAt: new Date().toISOString().slice(0, 16).replace('T', ' ') } : item);
+  if (USE_MOCK) {
+    localRelations = localRelations.map(item => item.id === id ? { ...item, active: false, updatedAt: new Date().toISOString().slice(0, 16).replace('T', ' ') } : item);
+    return;
+  }
+  const client = ensureOnedayClient(); if (!client) throw new Error('Supabase 尚未配置');
+  const { error } = await client.supabase.rpc('archive_task_relation', { p_id: id });
+  if (error) throw error;
 }
 
 export function buildRelationTree(relations: TaskRelation[]) {

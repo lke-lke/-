@@ -6,32 +6,20 @@ import { ALL_TEAMS, Team } from '@/constants';
 import { getTasks } from '@/services/taskService';
 import { getRescanRecords } from '@/services/rescanService';
 import { getTeamTaskPeriodStats, TaskBoardStatus, TeamTaskPeriodStats } from '@/services/statsService';
+import { formatCompanyQuarter, getPeriodRange, PeriodMode } from '@/utils/timeRange';
 
-type PeriodMode = '日' | '周' | '月' | '季度' | '自定义';
 const STATUSES: TaskBoardStatus[] = ['待开始', '进行中', '回扫中', '待确认', '已完成'];
 const STATUS_COLORS: Record<TaskBoardStatus, string> = { 待开始: '#ddd3c9', 进行中: '#806c79', 回扫中: '#b97d7b', 待确认: '#c1a0ac', 已完成: '#928e5e' };
-// 公司财年：Q1=4–6月，Q2=7–9月，Q3=10–12月，Q4=1–3月。
-const getCompanyQuarter = (date: Dayjs) => (Math.floor(date.month() / 3) + 3) % 4 + 1;
-const formatCompanyQuarter = (date: Dayjs) => `${date.year()}-Q${getCompanyQuarter(date)}`;
-
-function getRange(mode: PeriodMode, date: Dayjs, customRange: [Dayjs, Dayjs] | null): [Dayjs, Dayjs] {
-  if (mode === '自定义') return customRange || [date.startOf('day'), date.endOf('day')];
-  if (mode === '日') return [date.startOf('day'), date.endOf('day')];
-  if (mode === '周') return [date.startOf('week'), date.endOf('week')];
-  if (mode === '月') return [date.startOf('month'), date.endOf('month')];
-  const quarterStartMonth = Math.floor(date.month() / 3) * 3;
-  return [date.startOf('month').month(quarterStartMonth), date.startOf('month').month(quarterStartMonth + 2).endOf('month')];
-}
 
 export default function TaskTimeline() {
   const [mode, setMode] = useState<PeriodMode>('月');
   const [anchorDate, setAnchorDate] = useState<Dayjs>(dayjs());
   const [customRange, setCustomRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [stats, setStats] = useState<TeamTaskPeriodStats[]>([]);
-  const [range, setRange] = useState<[Dayjs, Dayjs]>(getRange('月', dayjs(), null));
+  const [range, setRange] = useState<[Dayjs, Dayjs]>(getPeriodRange('月', dayjs(), null));
 
   useEffect(() => {
-    const nextRange = getRange(mode, anchorDate, customRange);
+    const nextRange = getPeriodRange(mode, anchorDate, customRange);
     setRange(nextRange);
     Promise.all([getTasks(), getRescanRecords()]).then(([tasks, rescans]) => setStats(getTeamTaskPeriodStats(tasks, rescans, nextRange[0], nextRange[1])));
   }, [mode, anchorDate, customRange]);

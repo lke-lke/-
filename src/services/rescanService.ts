@@ -40,7 +40,8 @@ export async function getRescanRecords(filters?: { taskId?: string; assistant?: 
   if (!client) return [];
   let query = client.supabase.from('rescan_records').select('*');
   if (filters?.taskId) query = query.eq('original_task_id', filters.taskId);
-  const { data } = await query.order('created_at', { ascending: false });
+  const { data, error } = await query.order('created_at', { ascending: false });
+  if (error) throw error;
   return (data || []).map(toRecord);
 }
 
@@ -56,6 +57,7 @@ export async function createRescanRecord(record: Omit<RescanRecord, 'id' | 'crea
   }
   const client = ensureOnedayClient();
   if (!client) return newRecord;
-  const { data } = await client.supabase.from('rescan_records').insert([toRecordRow(newRecord)]).select().single();
+  const { data, error } = await client.supabase.from('rescan_records').insert([toRecordRow(newRecord)]).select().single();
+  if (error) throw error;
   return data ? toRecord(data) : newRecord;
 }

@@ -1,8 +1,10 @@
-import { Layout as AntLayout, Menu, Select } from 'antd';
+import { Layout as AntLayout, Menu, Select, message } from 'antd';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { DashboardOutlined, ProjectOutlined, TeamOutlined, FormOutlined, SyncOutlined, ImportOutlined, UsergroupAddOutlined, MenuFoldOutlined, MenuUnfoldOutlined, SettingOutlined } from '@ant-design/icons';
 import { ACTOR_OPTIONS, useActor } from '@/contexts/ActorContext';
+import { DATA_MODE } from '@/services/db';
+import { ensureOnedayClient } from '@/onedaycloud';
 
 const { Sider, Content } = AntLayout;
 
@@ -55,7 +57,17 @@ export default function Layout() {
       </Sider>
       <AntLayout>
         <Content className="app-content">
-          <div className="actor-bar"><span>当前登录身份</span><Select size="small" value={actor.role} onChange={value => { const selected = ACTOR_OPTIONS.find(option => option.role === value); if (selected) setActor(selected); }} options={ACTOR_OPTIONS.map(option => ({ value: option.role, label: option.role }))} /></div>
+          <div className="actor-bar"><span>当前登录身份</span><Select size="small" value={actor.role} onChange={async value => {
+            const selected = ACTOR_OPTIONS.find(option => option.role === value);
+            if (!selected) return;
+            if (DATA_MODE === 'supabase') {
+              const role = value === '管理员' ? 'admin' : value === '组长' ? 'leader' : 'member';
+              const client = ensureOnedayClient();
+              const { error } = client ? await client.supabase.rpc('set_local_demo_role', { p_role: role }) : { error: new Error('Supabase 尚未配置') };
+              if (error) return message.error(error.message);
+            }
+            setActor(selected);
+          }} options={ACTOR_OPTIONS.map(option => ({ value: option.role, label: option.role }))} /></div>
           <div className="page-frame"><Outlet /></div>
         </Content>
       </AntLayout>

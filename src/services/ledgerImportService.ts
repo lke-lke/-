@@ -1,4 +1,6 @@
 import * as XLSX from 'xlsx';
+import { ensureOnedayClient } from '@/onedaycloud';
+import { USE_MOCK } from './db';
 
 export type LedgerKind = 'task' | 'rescan';
 
@@ -23,6 +25,13 @@ export interface LedgerPreview {
   review: number;
   fieldMapping: Array<{ source: string; target: string }>;
   rows: ImportedRow[];
+}
+
+export interface TaskImportDefaults {
+  team: string;
+  assignee: string;
+  teamLeader?: string;
+  taskTypeFor: (name: string, taskGroup: string) => string;
 }
 
 const empty = (value: unknown) => value === undefined || value === null || value === '' || value === '/' || value === '-';
@@ -124,4 +133,42 @@ function previewRescans(book: XLSX.WorkBook, sourceName: string): LedgerPreview 
       { source: '任务类型 / 任务名称', target: '关联任务（待匹配）' }, { source: '验收字段', target: '验收状态' },
     ],
   };
+}
+
+export async function commitTaskLedgerImport(preview: LedgerPreview, defaults: TaskImportDefaults) {
+  if (USE_MOCK) return null;
+  if (preview.kind !== 'task') throw new Error('该提交接口只接受任务台账');
+  const client = ensureOnedayClient();
+  if (!client) throw new Error('Supabase 尚未配置');
+  const rows = preview.rows.map(row => ({
+    source_sheet: row.sourceSheet,
+    source_row: row.sourceRow,
+    raw_data: row.payload,
+    normalized_data: {
+      name: row.name,
+      ownership: String(row.payload.ownership || '其他'),
+      main_task: '临时任务',
+      task_group: String(row.payload.taskGroup || '临时任务'),
+      work_nature: String(row.payload.workNature || '首次交付'),
+      task_type: defaults.taskTypeFor(row.name, String(row.payload.taskGroup || '')),
+      assignee: defaults.assignee,
+      team: defaults.team,
+      team_leader: defaults.teamLeader || '',
+      data_reporter: String(row.payload.dataReporter || ''),
+      reviewer: String(row.payload.reviewer || ''),
+      data_volume: row.volume || 0,
+      workforce: 0,
+      created_at: row.date,
+      platform_task_id: row.externalId,
+      external_task_id: row.externalId,
+      rule_doc_link: String(row.payload.ruleDoc || ''),
+    },
+  }));
+  const { data, error } = await client.supabase.rpc('commit_task_ledger_import', {
+    p_filename: preview.sourceName,
+    p_rows: rows,
+    p_storage_key: null,
+  });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
 }

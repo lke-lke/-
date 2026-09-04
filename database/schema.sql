@@ -1,5 +1,9 @@
--- 筝一小助理管理看板 - 数据库建表SQL
--- 在 OneDay Cloud 开通后执行
+-- [已废弃：禁止执行]
+-- 本文件仅保留为 2026-09-03 前的历史结构参考。
+-- 当前唯一数据库事实源：supabase/migrations/*.sql
+-- 本地执行：npm run db:reset；1d 环境按时间顺序执行 migration。
+
+-- 筝一小助理管理看板 - 旧版数据库建表SQL
 
 -- 任务主表
 CREATE TABLE public.tasks (

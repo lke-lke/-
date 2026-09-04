@@ -40,11 +40,12 @@ export async function addTaskContribution(input: Omit<TaskContribution, 'id' | '
   const item: TaskContribution = { ...input, id: `tc${Date.now()}-${++localContributionSequence}`, attachedAt: new Date().toISOString().slice(0, 10) };
   if (USE_MOCK) { localContributions.push(item); return item; }
   const client = ensureOnedayClient(); if (!client) return item;
-  const { data } = await client.supabase.from('task_contributions').insert([{
-    task_id: item.taskId, member: item.member, tag: item.tag, evidence_type: item.evidenceType,
-    evidence_id: item.evidenceId, note: item.note, attached_by: item.attachedBy, attached_at: item.attachedAt,
-    status: item.status ?? 'pending', confirmed_by: item.confirmedBy, confirmed_at: item.confirmedAt,
-  }]).select().single();
+  const { data, error } = await client.supabase.rpc('add_task_contribution', {
+    p_task_id: item.taskId, p_member: item.member, p_tag: item.tag,
+    p_evidence_type: item.evidenceType || null, p_evidence_id: item.evidenceId || null,
+    p_note: item.note || null,
+  });
+  if (error) throw error;
   return data ? toContribution(data) : item;
 }
 
@@ -52,13 +53,16 @@ export async function confirmTaskContribution(id: string, confirmedBy: string): 
   const confirmedAt = new Date().toISOString().slice(0, 16).replace('T', ' ');
   if (USE_MOCK) { const index = localContributions.findIndex(item => item.id === id); if (index < 0) return null; localContributions[index] = { ...localContributions[index], status: 'confirmed', confirmedBy, confirmedAt }; return localContributions[index]; }
   const client = ensureOnedayClient(); if (!client) return null;
-  const { data } = await client.supabase.from('task_contributions').update({ status: 'confirmed', confirmed_by: confirmedBy, confirmed_at: confirmedAt }).eq('id', id).select().single();
+  const { data, error } = await client.supabase.rpc('confirm_task_contribution', { p_id: id });
+  if (error) throw error;
   return data ? toContribution(data) : null;
 }
 
 export async function removeTaskContribution(id: string): Promise<void> {
   if (USE_MOCK) { localContributions = localContributions.filter(item => item.id !== id); return; }
-  const client = ensureOnedayClient(); if (client) await client.supabase.from('task_contributions').delete().eq('id', id);
+  const client = ensureOnedayClient(); if (!client) return;
+  const { error } = await client.supabase.rpc('remove_task_contribution', { p_id: id });
+  if (error) throw error;
 }
 
 export async function getDifficultyRevisions(taskId: string): Promise<DifficultyRevision[]> {
@@ -71,11 +75,8 @@ export async function getDifficultyRevisions(taskId: string): Promise<Difficulty
 export async function saveFinalDifficulty(input: Omit<DifficultyRevision, 'id' | 'confirmedAt' | 'phase'>): Promise<DifficultyRevision> {
   const item: DifficultyRevision = { ...input, id: `dr${Date.now()}`, phase: 'final', confirmedAt: new Date().toISOString().slice(0, 10) };
   if (USE_MOCK) { localRevisions.push(item); return item; }
-  const client = ensureOnedayClient(); if (!client) return item;
-  const { data } = await client.supabase.from('difficulty_revisions').insert([{
-    task_id: item.taskId, difficulty: item.difficulty, phase: 'final', reason: item.reason, confirmed_by: item.confirmedBy, confirmed_at: item.confirmedAt,
-  }]).select().single();
-  return data ? toRevision(data) : item;
+  // 正式模式在 settle_task RPC 中与结项记录同事务保存，避免“星级已改但结项失败”。
+  return item;
 }
 
 export async function getTaskSettlement(taskId: string): Promise<TaskSettlement | null> {
@@ -88,10 +89,12 @@ export async function getTaskSettlement(taskId: string): Promise<TaskSettlement 
 export async function confirmTaskSettlement(settlement: TaskSettlement): Promise<TaskSettlement> {
   if (USE_MOCK) { localSettlements = [...localSettlements.filter(item => item.taskId !== settlement.taskId), settlement]; return settlement; }
   const client = ensureOnedayClient(); if (!client) return settlement;
-  const { data } = await client.supabase.from('task_settlements').upsert({
-    task_id: settlement.taskId, confirmed_by: settlement.confirmedBy, confirmed_at: settlement.confirmedAt,
-    final_difficulty: settlement.finalDifficulty, difficulty_reason: settlement.difficultyReason, summary: settlement.summary,
-  }).select().single();
+  const { data, error } = await client.supabase.rpc('settle_task', {
+    p_task_id: settlement.taskId, p_final_difficulty: settlement.finalDifficulty,
+    p_difficulty_reason: settlement.difficultyReason || null,
+    p_summary: settlement.summary || null, p_workload_points: null,
+  });
+  if (error) throw error;
   return data ? { taskId: data.task_id, confirmedBy: data.confirmed_by, confirmedAt: String(data.confirmed_at).slice(0, 10), finalDifficulty: data.final_difficulty, difficultyReason: data.difficulty_reason, summary: data.summary } : settlement;
 }
 

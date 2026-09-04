@@ -78,6 +78,21 @@ const toDocumentRow = (doc: Omit<Document, 'id'>) => ({
   root_document_id: doc.rootDocumentId,
 });
 
+const rpcDocument = (data: any): Document | null => {
+  const row = Array.isArray(data) ? data[0] : data;
+  return row ? toDocument(row) : null;
+};
+
+async function withSignedLink(row: any): Promise<Document> {
+  const document = toDocument(row);
+  const storageKey = row.storage_key;
+  if (!storageKey || USE_MOCK) return document;
+  const client = ensureOnedayClient();
+  if (!client) return document;
+  const { data } = await client.supabase.storage.from('deliverables').createSignedUrl(storageKey, 3600);
+  return { ...document, link: data?.signedUrl || document.link };
+}
+
 async function appendReviewEvent(document: Document, actor: string, actorRole: ActorRole, action: DocumentReviewEvent['action'], fromStatus: Document['workflowStatus'], comment?: string) {
   const event: DocumentReviewEvent = {
     id: `dre${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
@@ -124,15 +139,17 @@ async function updateDocument(id: string, updates: Partial<Document>): Promise<D
 export async function getDocsByTask(taskId: string): Promise<Document[]> {
   if (USE_MOCK) return localDocs.filter(d => d.taskId === taskId).map(toDocument);
   const client = ensureOnedayClient(); if (!client) return [];
-  const { data } = await client.supabase.from('documents').select('*').eq('task_id', taskId);
-  return (data || []).map(toDocument);
+  const { data, error } = await client.supabase.from('documents').select('*').eq('task_id', taskId);
+  if (error) throw error;
+  return Promise.all((data || []).map(withSignedLink));
 }
 
 export async function getAllDocuments(): Promise<Document[]> {
   if (USE_MOCK) return localDocs.map(toDocument);
   const client = ensureOnedayClient(); if (!client) return [];
-  const { data } = await client.supabase.from('documents').select('*');
-  return (data || []).map(toDocument);
+  const { data, error } = await client.supabase.from('documents').select('*');
+  if (error) throw error;
+  return Promise.all((data || []).map(withSignedLink));
 }
 
 export async function getDocumentReviewEvents(documentId: string): Promise<DocumentReviewEvent[]> {
@@ -140,11 +157,12 @@ export async function getDocumentReviewEvents(documentId: string): Promise<Docum
   const rootId = document?.rootDocumentId || documentId;
   if (USE_MOCK) return localReviewEvents.filter(event => event.rootDocumentId === rootId);
   const client = ensureOnedayClient(); if (!client) return [];
-  const { data } = await client.supabase.from('document_review_events').select('*').eq('root_document_id', rootId).order('created_at');
+  const { data, error } = await client.supabase.from('document_review_events').select('*').eq('root_document_id', rootId).order('created_at');
+  if (error) throw error;
   return (data || []).map((row: any) => ({ id: row.id, documentId: row.document_id, rootDocumentId: row.root_document_id, taskId: row.task_id, actor: row.actor, actorRole: row.actor_role, action: row.action, fromStatus: row.from_status, toStatus: row.to_status, comment: row.comment, createdAt: row.created_at }));
 }
 
-export async function uploadDocument(doc: Omit<Document, 'id'>, actorRole: ActorRole = '组员'): Promise<Document> {
+export async function uploadDocument(doc: Omit<Document, 'id'>, actorRole: ActorRole = '组员', file?: File): Promise<Document> {
   const allDocs = await getAllDocuments();
   const prior = allDocs.filter(item => item.taskId === doc.taskId && item.docType === doc.docType).sort((a, b) => Number(b.version || 1) - Number(a.version || 1))[0];
   const id = `d${Date.now()}`;
@@ -156,14 +174,35 @@ export async function uploadDocument(doc: Omit<Document, 'id'>, actorRole: Actor
     return newDoc;
   }
   const client = ensureOnedayClient(); if (!client) return newDoc;
-  const { data } = await client.supabase.from('documents').insert([toDocumentRow(newDoc)]).select().single();
-  let saved = data ? toDocument(data) : newDoc;
-  if (data && !prior) saved = await updateDocument(saved.id, { rootDocumentId: saved.id }) || saved;
-  await appendReviewEvent(saved, doc.uploader, actorRole, 'member_submitted', prior?.workflowStatus, prior ? `提交 V${saved.version} 返修版本` : '首次提交交付物');
-  return saved;
+  let storageKey: string | null = null;
+  if (file) {
+    const { data: authData } = await client.supabase.auth.getUser();
+    const userId = authData.user?.id;
+    if (!userId) throw new Error('本地数据库会话尚未建立');
+    const safeName = file.name.replace(/[^a-zA-Z0-9._\-\u4e00-\u9fa5]/g, '_');
+    storageKey = `${userId}/${doc.taskId}/${Date.now()}-${safeName}`;
+    const { error: uploadError } = await client.supabase.storage.from('deliverables').upload(storageKey, file, { upsert: false });
+    if (uploadError) throw uploadError;
+  }
+  const { data, error } = await client.supabase.rpc('register_document_version', {
+    p_task_id: doc.taskId, p_doc_type: doc.docType, p_name: doc.name,
+    p_link: storageKey ? null : doc.link || null, p_storage_key: storageKey,
+  });
+  if (error) {
+    if (storageKey) await client.supabase.storage.from('deliverables').remove([storageKey]);
+    throw error;
+  }
+  const saved = rpcDocument(data);
+  return saved ? withSignedLink({ ...saved, storage_key: storageKey }) : newDoc;
 }
 
 export async function leaderReviewDocument(id: string, action: LeaderAction, reviewer: string, comment?: string): Promise<Document | null> {
+  if (!USE_MOCK) {
+    const client = ensureOnedayClient(); if (!client) return null;
+    const { data, error } = await client.supabase.rpc('leader_review_document', { p_document_id: id, p_action: action, p_comment: comment || null });
+    if (error) throw error;
+    return rpcDocument(data);
+  }
   const current = (await getAllDocuments()).find(doc => doc.id === id);
   if (!current || current.workflowStatus !== 'pending_leader_review') return null;
   if (action === 'complete' && current.reviewRoute === 'leader_then_admin') return null;
@@ -192,6 +231,12 @@ export async function submitDocumentForAdminReview(id: string, reviewer = '组�
 }
 
 export async function reviewDocumentByAdmin(id: string, decision: 'approved' | 'rejected', reviewer: string, comment?: string): Promise<Document | null> {
+  if (!USE_MOCK) {
+    const client = ensureOnedayClient(); if (!client) return null;
+    const { data, error } = await client.supabase.rpc('admin_review_document', { p_document_id: id, p_decision: decision, p_comment: comment || null });
+    if (error) throw error;
+    return rpcDocument(data);
+  }
   const current = (await getAllDocuments()).find(doc => doc.id === id);
   if (!current || current.workflowStatus !== 'pending_admin_review' || current.reviewRoute !== 'leader_then_admin') return null;
   const reviewedAt = now();
@@ -204,6 +249,12 @@ export async function reviewDocumentByAdmin(id: string, decision: 'approved' | '
 }
 
 export async function handleAdminRejection(id: string, action: RevisionAction, leader: string, comment?: string): Promise<Document | null> {
+  if (!USE_MOCK) {
+    const client = ensureOnedayClient(); if (!client) return null;
+    const { data, error } = await client.supabase.rpc('leader_handle_admin_rejection', { p_document_id: id, p_action: action, p_comment: comment || null });
+    if (error) throw error;
+    return rpcDocument(data);
+  }
   const current = (await getAllDocuments()).find(doc => doc.id === id);
   if (!current || current.workflowStatus !== 'leader_revision_required' || current.reviewRoute !== 'leader_then_admin') return null;
   const updates: Partial<Document> = action === 'return_member'

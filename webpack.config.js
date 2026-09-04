@@ -1,5 +1,10 @@
 const path = require('path');
+const webpack = require('webpack');
+const dotenv = require('dotenv');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+
+dotenv.config({ path: path.resolve(__dirname, '.env.local') });
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 module.exports = (env, argv) => {
   const isDev = argv.mode !== 'production';
@@ -52,6 +57,11 @@ module.exports = (env, argv) => {
       ],
     },
     plugins: [
+      new webpack.DefinePlugin({
+        'process.env.APP_DATA_MODE': JSON.stringify(process.env.APP_DATA_MODE || 'mock'),
+        'process.env.APP_SUPABASE_URL': JSON.stringify(process.env.APP_SUPABASE_URL || ''),
+        'process.env.APP_SUPABASE_ANON_KEY': JSON.stringify(process.env.APP_SUPABASE_ANON_KEY || ''),
+      }),
       new HtmlWebpackPlugin({
         template: './index.html',
         filename: isDev ? 'index.html' : path.join(__dirname, 'bundle.html'),
@@ -60,7 +70,6 @@ module.exports = (env, argv) => {
     ],
     externals: {
       '@ali/oneday-frontend-sdk': 'var (typeof oneday !== "undefined" ? oneday : { createClient: function() { return null; } })',
-      '@supabase/supabase-js': '{}',
     },
   };
 };

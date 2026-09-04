@@ -18,6 +18,7 @@ const toTask = (row: any): Task => ({
   relationId: row.relationId ?? row.relation_id,
   mainTask: row.mainTask ?? row.main_task_snapshot,
   linkedTask: row.linkedTask ?? row.linked_task_snapshot,
+  participantNames: row.participantNames ?? row.participant_names ?? [],
   docCompleteness: Number(row.docCompleteness ?? row.doc_completeness ?? 0),
   progress: Number(row.progress ?? 0),
   createdAt: row.createdAt ?? String(row.created_at).slice(0, 10),
@@ -27,7 +28,7 @@ const toTask = (row: any): Task => ({
 });
 
 const toTaskRow = (task: Partial<Task>) => {
-  const { taskGroup, workNature, teamLeader, dataReporter, dataVolume, platformTaskId, ruleDocLink, relationId, mainTask, linkedTask, docCompleteness, createdAt, expectedDeadline, alerts, ...rest } = task;
+  const { taskGroup, workNature, teamLeader, dataReporter, dataVolume, platformTaskId, ruleDocLink, relationId, mainTask, linkedTask, participantNames, docCompleteness, createdAt, expectedDeadline, alerts, ...rest } = task;
   return {
     ...rest,
     ...(taskGroup !== undefined && { task_group: taskGroup }),
@@ -40,6 +41,7 @@ const toTaskRow = (task: Partial<Task>) => {
     ...(relationId !== undefined && { relation_id: relationId || null }),
     ...(mainTask !== undefined && { main_task_snapshot: mainTask }),
     ...(linkedTask !== undefined && { linked_task_snapshot: linkedTask }),
+    ...(participantNames !== undefined && { participant_names: participantNames }),
     ...(docCompleteness !== undefined && { doc_completeness: docCompleteness }),
     ...(createdAt !== undefined && { created_at: createdAt }),
     ...(expectedDeadline !== undefined && { expected_deadline: expectedDeadline || null }),
@@ -66,7 +68,9 @@ export async function getTasks(filters?: {
   if (filters?.status) query = query.eq('status', filters.status);
   if (filters?.team) query = query.eq('team', filters.team);
   if (filters?.assignee) query = query.eq('assignee', filters.assignee);
-  const { data } = await query.order('created_at', { ascending: false });
+  if (filters?.ownership) query = query.eq('ownership', filters.ownership);
+  const { data, error } = await query.order('created_at', { ascending: false });
+  if (error) throw error;
   return (data || []).map(toTask);
 }
 
@@ -76,7 +80,8 @@ export async function getTaskById(id: string): Promise<Task | null> {
   }
   const client = ensureOnedayClient();
   if (!client) return null;
-  const { data } = await client.supabase.from('tasks').select('*').eq('id', id).single();
+  const { data, error } = await client.supabase.from('tasks').select('*').eq('id', id).single();
+  if (error) throw error;
   return data ? toTask(data) : null;
 }
 
@@ -96,7 +101,10 @@ export async function createTask(task: Omit<Task, 'id' | 'status' | 'progress' |
   }
   const client = ensureOnedayClient();
   if (!client) return newTask;
-  const { data } = await client.supabase.from('tasks').insert([toTaskRow(newTask)]).select().single();
+  const { data, error } = await client.supabase.from('tasks').insert([toTaskRow({
+    ...taskData, status: initialStatus || TaskStatus.PENDING, progress: 0, docCompleteness: 0,
+  })]).select().single();
+  if (error) throw error;
   return data ? toTask(data) : newTask;
 }
 
@@ -109,7 +117,8 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<Ta
   }
   const client = ensureOnedayClient();
   if (!client) return null;
-  const { data } = await client.supabase.from('tasks').update(toTaskRow(updates)).eq('id', id).select().single();
+  const { data, error } = await client.supabase.from('tasks').update(toTaskRow(updates)).eq('id', id).select().single();
+  if (error) throw error;
   return data ? toTask(data) : null;
 }
 

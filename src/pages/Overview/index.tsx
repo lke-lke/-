@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Badge, Card, Col, Progress, Row, Table, Tag } from 'antd';
+import { Alert, Card, Col, DatePicker, Progress, Row, Segmented, Table, Tag } from 'antd';
 import { WarningFilled } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import dayjs, { Dayjs } from 'dayjs';
 import { Team } from '@/constants';
 import { getTasks } from '@/services/taskService';
 import { getAllDocuments } from '@/services/documentService';
 import { getRescanRecords } from '@/services/rescanService';
-import { getTeamOverviewFacts, TeamOverviewFacts } from '@/services/statsService';
+import { getTeamOverviewFacts, getTeamTaskStatusStats, TeamOverviewFacts, TeamTaskPeriodStats } from '@/services/statsService';
 import DifficultyStars from '@/components/DifficultyStars';
 import { useActor } from '@/contexts/ActorContext';
+import { DateRange, formatCompanyQuarter, getPeriodRange, PeriodMode, taskOverlapsRange } from '@/utils/timeRange';
 
 type ComparisonRow = TeamOverviewFacts['activeTaskDetails'][number] & {
   key: string;
@@ -20,6 +22,12 @@ type ComparisonRow = TeamOverviewFacts['activeTaskDetails'][number] & {
 const TEAM_COLORS: Record<Team, string> = {
   [Team.GROUP_A]: '#806c79', [Team.GROUP_B]: '#928e5e', [Team.GROUP_C]: '#b97d7b', [Team.GROUP_D]: '#c1a0ac',
 };
+const STATUS_COLUMNS = [
+  { key: '待开始', color: '#ddd3c9' },
+  { key: '进行中', color: '#806c79' },
+  { key: '待确认', color: '#c1a0ac' },
+  { key: '已完成', color: '#928e5e' },
+] as const;
 
 function taskAction(task: TeamOverviewFacts['tasks'][number]) {
   if (task.alerts.length) return task.alerts[0].message;
@@ -30,26 +38,33 @@ function taskAction(task: TeamOverviewFacts['tasks'][number]) {
 
 function DifficultyBreakdown({ facts }: { facts: TeamOverviewFacts }) {
   return <div className="difficulty-breakdown">
-    {[1, 2, 3, 4, 5].map(star => <Tag key={star} color={star >= 4 ? 'volcano' : undefined}>{star} 星 {facts.difficultyCounts[star]} 个</Tag>)}
+    {[1, 2, 3, 4, 5]
+      .filter(star => facts.difficultyCounts[star] > 0)
+      .map(star => <Tag key={star} color={star >= 4 ? 'volcano' : undefined}>{star} 星 {facts.difficultyCounts[star]} 个</Tag>)}
     {facts.unratedTasks > 0 && <Tag color="gold">待评分 {facts.unratedTasks} 个</Tag>}
   </div>;
 }
 
 export default function Overview() {
   const [teams, setTeams] = useState<TeamOverviewFacts[]>([]);
+  const [taskStatusRows, setTaskStatusRows] = useState<TeamTaskPeriodStats[]>([]);
+  const [periodMode, setPeriodMode] = useState<PeriodMode>('月');
+  const [anchorDate, setAnchorDate] = useState<Dayjs>(dayjs());
+  const [customRange, setCustomRange] = useState<DateRange | null>(null);
   const navigate = useNavigate();
   const { actor } = useActor();
+  const selectedRange = useMemo(() => getPeriodRange(periodMode, anchorDate, customRange), [periodMode, anchorDate, customRange]);
 
   useEffect(() => {
     Promise.all([getTasks(), getAllDocuments(), getRescanRecords()]).then(([tasks, docs, rescans]) => {
       const scopedTasks = actor.role === '管理员' ? tasks : actor.role === '组长' ? tasks.filter(task => task.team === actor.team) : tasks.filter(task => task.assignee === actor.name || task.participantNames?.includes(actor.name));
-      const shownTeams = actor.role === '管理员' ? getTeamOverviewFacts(scopedTasks, docs, rescans) : getTeamOverviewFacts(scopedTasks, docs, rescans).filter(team => team.team === actor.team);
+      const periodTasks = actor.role === '管理员' ? scopedTasks.filter(task => taskOverlapsRange(task, selectedRange)) : scopedTasks;
+      const shownTeams = actor.role === '管理员' ? getTeamOverviewFacts(periodTasks, docs, rescans, selectedRange) : getTeamOverviewFacts(periodTasks, docs, rescans).filter(team => team.team === actor.team);
       setTeams(shownTeams);
+      setTaskStatusRows(getTeamTaskStatusStats(periodTasks, rescans));
     });
-  }, [actor]);
+  }, [actor, selectedRange]);
 
-  const riskRows = useMemo(() => teams.flatMap(team => team.tasks.filter(task => task.alerts.length || (task.deadline && new Date(task.deadline) < new Date(new Date().toDateString()))).map(task => ({ ...task, teamName: team.team })))
-    .sort((a, b) => b.alerts.length - a.alerts.length || a.progress - b.progress), [teams]);
   const comparisonRows = useMemo<ComparisonRow[]>(() => teams.flatMap(team => {
     const groupTasks = team.activeTaskDetails;
     if (!groupTasks.length) return [{ key: `${team.team}-empty`, id: '', name: '当前无进行中任务', team: team.team, teamName: team.team, leader: team.leader, teamRowSpan: 1, ownership: '' as any, taskGroup: '', workNature: '' as any, taskType: '' as any, assignee: '', teamLeader: '', dataReporter: '', reviewer: '', dataVolume: 0, workforce: 0, createdAt: '', deadline: '', status: '' as any, progress: 0, docCompleteness: 0, alerts: [] }];
@@ -59,12 +74,33 @@ export default function Overview() {
   const workspaceTitle = actor.role === '管理员' ? '各组作业总览' : actor.role === '组长' ? `${actor.team}工作台` : `早上好，${actor.name}`;
   const workspaceDescription = actor.role === '管理员' ? '用任务事实看见各组的规模、难度、平台进度和需处理事项。' : actor.role === '组长' ? '聚焦本组任务、验收与成员协作，优先处理临期和待确认事项。' : '查看我的任务、待补交付和待组长确认的工作记录。';
   const scopeLabel = actor.role === '管理员' ? '各组' : actor.role === '组长' ? '本组' : '我的';
+  const picker = periodMode === '日' ? 'date' : periodMode === '周' ? 'week' : periodMode === '月' ? 'month' : 'quarter';
 
   return <div>
     <div className="page-title-row"><div><div className="eyebrow">{actor.role === '管理员' ? 'GLOBAL WORKSPACE' : 'MY WORKSPACE'}</div><h2>{workspaceTitle}</h2><p>{workspaceDescription}</p></div><div className="overview-date-note">实时任务视图<br /><strong>不含临时评分</strong></div></div>
-    <Alert showIcon type="info" className="overview-info" message={actor.role === '组员' ? '工作记录提交后，需要组长确认才会计入本周工作量。' : '“本周管理动作”仅统计已上传文档和已登记回扫；文档验收和标准工作量规则接入后，将在此基础上补充。'} />
+    {actor.role === '管理员' && <Card className="timeline-filter-card overview-period-filter">
+      <div className="timeline-filter-row">
+        <Segmented value={periodMode} onChange={value => setPeriodMode(value as PeriodMode)} options={['日', '周', '月', '季度', '自定义']} />
+        {periodMode === '自定义'
+          ? <DatePicker.RangePicker value={customRange} onChange={value => setCustomRange(value?.[0] && value?.[1] ? [value[0], value[1]] : null)} />
+          : <DatePicker picker={picker as any} showWeek={periodMode === '周' ? false : undefined} format={periodMode === '季度' ? formatCompanyQuarter : undefined} inputReadOnly={periodMode === '季度'} value={anchorDate} onChange={value => value && setAnchorDate(value)} />}
+        <Tag color="blue">统计区间：{selectedRange[0].format('YYYY-MM-DD')} 至 {selectedRange[1].format('YYYY-MM-DD')}</Tag>
+      </div>
+    </Card>}
+    <Alert showIcon type="info" className="overview-info" message={actor.role === '组员' ? '工作记录提交后，需要组长确认才会计入本周工作量。' : actor.role === '管理员' ? '下方全部板块已统一使用所选时间区间；平台进度暂显示任务的最新进度。' : '“本周管理动作”仅统计已上传文档和已登记回扫；文档验收和标准工作量规则接入后，将在此基础上补充。'} />
 
-    <Card className="overview-summary-card" title={<><span>{scopeLabel}进行中任务明细</span><small>每个任务独立展示，便于横向核对</small></>}>
+    {actor.role === '管理员' ? <Card className="overview-summary-card" title="各组任务状态明细">
+      <Table rowKey="team" pagination={false} dataSource={taskStatusRows} columns={[
+        { title: '小组', dataIndex: 'team', width: 180, render: (team: Team) => <strong>{team}</strong> },
+        { title: '任务总量', dataIndex: 'total', width: 130, render: (value: number) => `${value} 个` },
+        ...STATUS_COLUMNS.map(status => ({
+          title: status.key,
+          key: status.key,
+          width: 130,
+          render: (row: TeamTaskPeriodStats) => <Tag color={status.color}>{status.key === '进行中' ? row.statuses['进行中'] + row.statuses['回扫中'] : row.statuses[status.key]} 个</Tag>,
+        })),
+      ]} />
+    </Card> : <Card className="overview-summary-card" title={<><span>{scopeLabel}进行中任务明细</span><small>每个任务独立展示，便于横向核对</small></>}>
       <Table size="small" rowKey="key" pagination={false} dataSource={comparisonRows} scroll={{ x: 1100 }} columns={[
         { title: '小组', dataIndex: 'teamName', width: 155, render: (team: Team, row: ComparisonRow) => <span style={{ color: TEAM_COLORS[team], fontWeight: 600 }}>{team}<br /><span style={{ color: 'var(--ink-soft)', fontWeight: 400 }}>组长：{row.leader}</span></span>, onCell: (row: ComparisonRow) => ({ rowSpan: row.teamRowSpan }) },
         { title: '任务 ID', dataIndex: 'platformTaskId', width: 185, render: (value: string) => value || <Tag>待补充</Tag> },
@@ -74,20 +110,20 @@ export default function Overview() {
         { title: '平台进度', dataIndex: 'progress', width: 170, render: (value: number, row: ComparisonRow) => row.id ? <Progress percent={Math.round(value * 100)} size="small" /> : '-' },
         { title: '当前状态', dataIndex: 'alerts', width: 180, render: (alerts: any[], row: ComparisonRow) => !row.id ? '-' : alerts.length ? <Tag color="red">{alerts[0].type}</Tag> : <Tag color="green">正常</Tag> },
       ]} />
-    </Card>
+    </Card>}
 
     <Row gutter={[20, 20]}>
       {teams.map(team => <Col xs={24} xl={12} key={team.team}>
         <Card className="group-card" title={<span style={{ color: TEAM_COLORS[team.team] }}>{team.team}<Tag className="leader-tag">组长：{team.leader}</Tag></span>}>
           <Row gutter={12} className="group-metrics">
-            <Col span={8}><div className="metric-label">进行中任务</div><div className="metric-value">{team.activeTasks}<span className="metric-unit">个</span></div></Col>
-            <Col span={8}><div className="metric-label">当前数据量</div><div className="metric-value">{team.activeDataVolume.toLocaleString()}<span className="metric-unit">条</span></div></Col>
-            <Col span={8}><div style={{ color: 'var(--ink-soft)', fontSize: 12 }}>平均平台进度</div><Progress type="circle" size={52} strokeColor={TEAM_COLORS[team.team]} percent={Math.round(team.avgProgress * 100)} /></Col>
+            <Col span={8}><div className="metric-label">{actor.role === '管理员' ? '区间进行中任务' : '进行中任务'}</div><div className="metric-value">{team.activeTasks}<span className="metric-unit">个</span></div></Col>
+            <Col span={8}><div className="metric-label">{actor.role === '管理员' ? '区间数据量' : '当前数据量'}</div><div className="metric-value">{team.activeDataVolume.toLocaleString()}<span className="metric-unit">条</span></div></Col>
+            <Col span={8}><div style={{ color: 'var(--ink-soft)', fontSize: 12 }}>{actor.role === '管理员' ? '平均平台进度（最新）' : '平均平台进度'}</div><Progress type="circle" size={52} strokeColor={TEAM_COLORS[team.team]} percent={Math.round(team.avgProgress * 100)} /></Col>
           </Row>
           <div className="difficulty-panel"><span>任务难度分布</span><DifficultyBreakdown facts={team} /></div>
-          <div className="action-strip"><span>本周管理动作</span><Tag>规则/需求文档 {team.weeklyActions.ruleOrRequirementUploads}</Tag><Tag>报告 {team.weeklyActions.reportUploads}</Tag><Tag>回扫 {team.weeklyActions.rescanRecords}</Tag></div>
+          <div className="action-strip"><span>{actor.role === '管理员' ? '区间管理动作' : '本周管理动作'}</span><Tag>规则/需求文档 {team.periodActions.ruleOrRequirementUploads}</Tag><Tag>报告 {team.periodActions.reportUploads}</Tag><Tag>回扫 {team.periodActions.rescanRecords}</Tag></div>
           <div className="action-strip"><span>时限风险</span><Tag color={team.overdueTasks ? 'error' : 'success'}>逾期 {team.overdueTasks} 个</Tag><Tag>逾期率 {Math.round(team.overdueRate * 100)}%</Tag><Tag color={team.riskTasks ? 'warning' : 'success'}>需关注 {team.riskTasks} 个</Tag></div>
-          <div className="section-kicker">当前重点任务</div>
+          <div className="section-kicker">{actor.role === '管理员' ? '区间重点任务' : '当前重点任务'}</div>
           {team.tasks.length ? team.tasks.map(task => <div key={task.id} onClick={() => navigate(`/tasks/${task.id}`)} className={`task-focus-item ${task.alerts.length ? 'is-risk' : ''}`}>
             <div className="task-focus-head"><span>{task.name}</span>{task.alerts.length ? <WarningFilled /> : null}</div>
             <div className="task-focus-meta"><DifficultyStars value={task.difficulty} readOnly /><span>{task.dataVolume.toLocaleString()} 条 · 平台进度 {Math.round(task.progress * 100)}%</span></div>
@@ -97,13 +133,5 @@ export default function Overview() {
       </Col>)}
     </Row>
 
-    <Card className="overview-summary-card global-risk-card" title={<><span>{scopeLabel}重点任务</span><small>优先查看进度、时限或文档存在风险的任务</small></>}>
-      <Table size="small" rowKey="id" pagination={false} dataSource={riskRows} locale={{ emptyText: '当前没有风险任务' }} columns={[
-        { title: '小组', dataIndex: 'teamName', width: 120 }, { title: '任务名称', dataIndex: 'name', width: 260, render: (name: string, task: any) => <a onClick={() => navigate(`/tasks/${task.id}`)}>{name}</a> },
-        { title: '难度', dataIndex: 'difficulty', width: 115, render: (value: number) => <DifficultyStars value={value} readOnly /> }, { title: '数据量', dataIndex: 'dataVolume', width: 90, render: (value: number) => `${value.toLocaleString()} 条` },
-        { title: '平台进度', dataIndex: 'progress', width: 130, render: (value: number) => <Progress percent={Math.round(value * 100)} size="small" /> },
-        { title: '当前卡点', dataIndex: 'alerts', render: (alerts: any[]) => alerts[0]?.message },
-      ]} />
-    </Card>
   </div>;
 }

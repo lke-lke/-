@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, DatePicker, Form, Input, InputNumber, Modal, Select, Table, message } from 'antd';
+import { Alert, Button, Card, DatePicker, Empty, Form, Input, InputNumber, Modal, Segmented, Select, Space, Table, message } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { Task, TaskRelation } from '@/types';
 import { ALL_TEAMS, getTaskStatusLabel, TaskStatus, TaskType, WorkNature } from '@/constants';
@@ -10,10 +10,21 @@ import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { getTaskRelations } from '@/services/taskRelationService';
 import { useActor } from '@/contexts/ActorContext';
+import TaskCard from '@/components/TaskCard';
 
 const CUSTOM = '__custom__';
 const TEMPORARY = '__temporary__';
 const normalizeMainTask = (mainTask: string) => mainTask === '-' || mainTask === '临时任务' ? TEMPORARY : mainTask;
+type TaskViewMode = '层级视图' | '流转看板';
+type FlowStage = '待开始' | '进行中' | '待确认' | '已完成';
+const FLOW_STAGES: FlowStage[] = ['待开始', '进行中', '待确认', '已完成'];
+
+const getFlowStage = (status: TaskStatus): FlowStage => {
+  if (status === TaskStatus.DONE) return '已完成';
+  if ([TaskStatus.DATA_DONE, TaskStatus.TO_DELIVER, TaskStatus.TO_ACCEPT].includes(status)) return '待确认';
+  if (status === TaskStatus.IN_PROGRESS) return '进行中';
+  return '待开始';
+};
 
 export default function TaskRegister() {
   const [modalOpen, setModalOpen] = useState(false);
@@ -22,6 +33,9 @@ export default function TaskRegister() {
   const [relations, setRelations] = useState<TaskRelation[]>([]);
   const [selectedOwnership, setSelectedOwnership] = useState('');
   const [selectedMainTask, setSelectedMainTask] = useState('');
+  const [viewMode, setViewMode] = useState<TaskViewMode>('层级视图');
+  const [filterTeam, setFilterTeam] = useState('');
+  const [filterAssignee, setFilterAssignee] = useState('');
   const { actor } = useActor();
   const canManage = actor.role !== '组员';
   const navigate = useNavigate();
@@ -44,6 +58,12 @@ export default function TaskRegister() {
       : tasks.filter(task => task.assignee === actor.name || task.participantNames?.includes(actor.name));
   const pendingCompletion = visibleTasks.filter(task => task.status === TaskStatus.PENDING_INFO);
   const pageTitle = actor.role === '管理员' ? '任务全景' : actor.role === '组长' ? '本组任务' : '我的任务';
+  const boardTasks = visibleTasks.filter(task => (!filterTeam || task.team === filterTeam) && (!filterAssignee || task.assignee === filterAssignee));
+  const assigneeOptions = [...new Set(visibleTasks.filter(task => !filterTeam || task.team === filterTeam).map(task => task.assignee).filter(Boolean))];
+  const tasksByStage = FLOW_STAGES.reduce((result, stage) => {
+    result[stage] = boardTasks.filter(task => getFlowStage(task.status) === stage);
+    return result;
+  }, {} as Record<FlowStage, Task[]>);
 
   const resetHierarchy = (fields: string[]) => {
     form.resetFields(fields);
@@ -116,12 +136,35 @@ export default function TaskRegister() {
     : [taskNameColumn, statusColumn, ...hierarchyColumns, ...executionColumns];
 
   return <div>
-    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+    <div className="page-title-row">
       <div><h2 style={{ margin: 0 }}>{pageTitle}</h2><p style={{ color: 'var(--text-secondary)', margin: '6px 0 0' }}>任务归属、主任务和任务分组可从已维护关系选择，也支持为本次任务自定义填写。</p></div>
       {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>新建任务</Button>}
     </div>
     {actor.role === '组长' && pendingCompletion.length > 0 && <Alert type="warning" showIcon style={{ marginBottom: 16 }} message={`有 ${pendingCompletion.length} 个台账导入任务待完善`} description="请进入任务详情补齐预计截止时间、实际截止时间及任务挂链信息；保存完整后任务会自动进入“进行中”。" />}
-    <Table dataSource={visibleTasks} columns={columns} rowKey="id" size="small" pagination={{ pageSize: 15 }} scroll={{ x: 1550 }} />
+    {canManage && <Card className="task-view-switcher">
+      <div className="task-view-switcher-row">
+        <div><strong>任务视图</strong><span>按挂链字段查询，或按流程阶段推进任务</span></div>
+        <Segmented value={viewMode} options={['层级视图', '流转看板']} onChange={value => setViewMode(value as TaskViewMode)} />
+      </div>
+    </Card>}
+    {viewMode === '层级视图' || !canManage ? <Table dataSource={visibleTasks} columns={columns} rowKey="id" size="small" pagination={{ pageSize: 15 }} scroll={{ x: 1550 }} /> : <div className="embedded-flow-board">
+      <div className="embedded-flow-toolbar">
+        <div><h3>任务流转看板</h3><p>待完善任务归入“待开始”；数据完成、待交付和待验收统一归入“待确认”。</p></div>
+        <Space wrap>
+          {actor.role === '管理员' && <Select allowClear placeholder="筛选小组" value={filterTeam || undefined} style={{ width: 150 }} options={ALL_TEAMS.map(value => ({ label: value, value }))} onChange={value => { setFilterTeam(value || ''); setFilterAssignee(''); }} />}
+          <Select allowClear placeholder="筛选负责人" value={filterAssignee || undefined} style={{ width: 150 }} options={assigneeOptions.map(value => ({ label: value, value }))} onChange={value => setFilterAssignee(value || '')} />
+        </Space>
+      </div>
+      <div className="embedded-flow-grid">
+        {FLOW_STAGES.map(stage => <section className={`embedded-flow-column stage-${FLOW_STAGES.indexOf(stage) + 1}`} key={stage}>
+          <div className="embedded-flow-column-title"><strong>{stage}</strong><span>{tasksByStage[stage].length}</span></div>
+          <div className="embedded-flow-column-body">
+            {tasksByStage[stage].map(task => <TaskCard key={task.id} task={task} showContext showTeam={actor.role === '管理员'} preferExpectedDeadline onClick={() => navigate(`/tasks/${task.id}`)} />)}
+            {!tasksByStage[stage].length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务" />}
+          </div>
+        </section>)}
+      </div>
+    </div>}
     <Modal title="手动新建任务" open={modalOpen} onOk={handleSubmit} onCancel={closeModal} width={760} okText="创建并开始">
       <Form form={form} layout="vertical" style={{ maxHeight: 540, overflow: 'auto' }}>
         <Form.Item name="name" label="任务名称" rules={[{ required: true }]}><Input placeholder="如：0701-叠穿生成图评测标注" /></Form.Item>
