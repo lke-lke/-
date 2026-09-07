@@ -2,20 +2,15 @@ export enum TaskStatus {
   PENDING_INFO = '待完善',
   PENDING = '待开始',
   IN_PROGRESS = '进行中',
-  DATA_DONE = '数据完成',
-  TO_DELIVER = '待交付',
-  TO_ACCEPT = '待验收',
+  WAIT_CONFIRM = '待确认',
   DONE = '已完成',
 }
 
-// 任务状态的系统值保持不变，避免影响既有流程判断；看板展示按最新口径互换两个人工确认阶段。
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   [TaskStatus.PENDING_INFO]: '待完善',
   [TaskStatus.PENDING]: '待开始',
   [TaskStatus.IN_PROGRESS]: '进行中',
-  [TaskStatus.DATA_DONE]: '数据完成',
-  [TaskStatus.TO_DELIVER]: '待验收',
-  [TaskStatus.TO_ACCEPT]: '待交付',
+  [TaskStatus.WAIT_CONFIRM]: '待确认',
   [TaskStatus.DONE]: '已完成',
 };
 

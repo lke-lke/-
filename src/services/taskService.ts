@@ -22,29 +22,34 @@ const toTask = (row: any): Task => ({
   docCompleteness: Number(row.docCompleteness ?? row.doc_completeness ?? 0),
   progress: Number(row.progress ?? 0),
   createdAt: row.createdAt ?? String(row.created_at).slice(0, 10),
+  dispatchedAt: row.dispatchedAt ?? (row.dispatched_at ? String(row.dispatched_at).slice(0, 10) : undefined),
   deadline: row.deadline ? String(row.deadline).slice(0, 10) : '',
   expectedDeadline: row.expectedDeadline ?? (row.expected_deadline ? String(row.expected_deadline).slice(0, 10) : ''),
+  mappingStatus: row.mappingStatus ?? row.mapping_status,
+  sourcePayload: row.sourcePayload ?? row.source_payload,
+  rowVersion: Number(row.rowVersion ?? row.row_version ?? 1),
   alerts: row.alerts ?? [],
 });
 
 const toTaskRow = (task: Partial<Task>) => {
-  const { taskGroup, workNature, teamLeader, dataReporter, dataVolume, platformTaskId, ruleDocLink, relationId, mainTask, linkedTask, participantNames, docCompleteness, createdAt, expectedDeadline, alerts, ...rest } = task;
+  const { taskGroup, workNature, teamLeader, dataReporter, dataVolume, platformTaskId, ruleDocLink, relationId, mainTask, linkedTask, participantNames, docCompleteness, createdAt, dispatchedAt, expectedDeadline, mappingStatus, sourcePayload, rowVersion, alerts, ...rest } = task;
   return {
     ...rest,
     ...(taskGroup !== undefined && { task_group: taskGroup }),
     ...(workNature !== undefined && { work_nature: workNature }),
     ...(teamLeader !== undefined && { team_leader: teamLeader }),
-    ...(dataReporter !== undefined && { data_reporter: dataReporter }),
     ...(dataVolume !== undefined && { data_volume: dataVolume }),
     ...(platformTaskId !== undefined && { platform_task_id: platformTaskId }),
-    ...(ruleDocLink !== undefined && { rule_doc_link: ruleDocLink }),
     ...(relationId !== undefined && { relation_id: relationId || null }),
     ...(mainTask !== undefined && { main_task_snapshot: mainTask }),
     ...(linkedTask !== undefined && { linked_task_snapshot: linkedTask }),
     ...(participantNames !== undefined && { participant_names: participantNames }),
     ...(docCompleteness !== undefined && { doc_completeness: docCompleteness }),
     ...(createdAt !== undefined && { created_at: createdAt }),
+    ...(dispatchedAt !== undefined && { dispatched_at: dispatchedAt || null }),
     ...(expectedDeadline !== undefined && { expected_deadline: expectedDeadline || null }),
+    ...(mappingStatus !== undefined && { mapping_status: mappingStatus }),
+    ...(sourcePayload !== undefined && { source_payload: sourcePayload }),
   };
 };
 
@@ -101,11 +106,13 @@ export async function createTask(task: Omit<Task, 'id' | 'status' | 'progress' |
   }
   const client = ensureOnedayClient();
   if (!client) return newTask;
-  const { data, error } = await client.supabase.from('tasks').insert([toTaskRow({
-    ...taskData, status: initialStatus || TaskStatus.PENDING, progress: 0, docCompleteness: 0,
-  })]).select().single();
+  const { data, error } = await client.supabase.rpc('create_manual_task_v2', {
+    p_payload: { ...taskData, relationId: taskData.relationId, participantNames: taskData.participantNames?.length ? taskData.participantNames : [taskData.assignee] },
+    p_request_id: `manual-task:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+  });
   if (error) throw error;
-  return data ? toTask(data) : newTask;
+  const row = Array.isArray(data) ? data[0] : data;
+  return row ? toTask(row) : newTask;
 }
 
 export async function updateTask(id: string, updates: Partial<Task>): Promise<Task | null> {
@@ -122,14 +129,52 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<Ta
   return data ? toTask(data) : null;
 }
 
+export async function completeTaskSetup(id: string, input: {
+  relationId: string;
+  assignee: string;
+  expectedDeadline: string;
+  dataVolume: number;
+  difficulty: number;
+  expectedVersion?: number;
+}): Promise<Task | null> {
+  if (USE_MOCK) return updateTask(id, {
+    relationId: input.relationId, assignee: input.assignee,
+    expectedDeadline: input.expectedDeadline, dataVolume: input.dataVolume,
+    difficulty: input.difficulty, mappingStatus: 'complete', status: TaskStatus.PENDING,
+  });
+  const client = ensureOnedayClient();
+  if (!client) return null;
+  const { data, error } = await client.supabase.rpc('complete_task_setup', {
+    p_task_id: id, p_relation_id: input.relationId, p_primary_assignee: input.assignee,
+    p_expected_deadline: input.expectedDeadline, p_data_volume: input.dataVolume,
+    p_difficulty: input.difficulty, p_request_id: `task-setup:${id}:${Date.now()}`,
+    p_expected_version: input.expectedVersion || null,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return row ? toTask(row) : null;
+}
+
+export async function transitionTaskStatus(task: Task, target: TaskStatus, reason?: string): Promise<Task | null> {
+  if (USE_MOCK) return updateTask(task.id, { status: target });
+  const client = ensureOnedayClient();
+  if (!client) return null;
+  const { data, error } = await client.supabase.rpc('transition_task_status', {
+    p_task_id: task.id, p_to_status: target, p_reason: reason || null,
+    p_expected_version: task.rowVersion || null,
+    p_request_id: `task-transition:${task.id}:${target}:${Date.now()}`,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return row ? toTask(row) : null;
+}
+
 export function getTasksByStatus(): Record<TaskStatus, Task[]> {
   const grouped: Record<TaskStatus, Task[]> = {
     [TaskStatus.PENDING_INFO]: [],
     [TaskStatus.PENDING]: [],
     [TaskStatus.IN_PROGRESS]: [],
-    [TaskStatus.DATA_DONE]: [],
-    [TaskStatus.TO_DELIVER]: [],
-    [TaskStatus.TO_ACCEPT]: [],
+    [TaskStatus.WAIT_CONFIRM]: [],
     [TaskStatus.DONE]: [],
   };
   localTasks.forEach(t => {

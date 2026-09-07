@@ -28,6 +28,7 @@ export default function RescanLog() {
       render: (r: string) => <Tag>{r}</Tag> },
     { title: '变更说明', dataIndex: 'description', key: 'description', width: 200 },
     { title: '回扫数据量', dataIndex: 'rescanVolume', key: 'rescanVolume', width: 100 },
+    { title: '支援时长', dataIndex: 'supportHours', key: 'supportHours', width: 90, render: (value: number) => value == null ? '-' : `${value} h` },
     { title: '执行人', dataIndex: 'executors', key: 'executors', width: 140,
       render: (e: string[]) => e.join('、') },
     { title: '对接助理', dataIndex: 'contactAssistant', key: 'contactAssistant', width: 90 },
@@ -54,6 +55,7 @@ export default function RescanLog() {
         expectedDone: values.expectedDone.format('YYYY-MM-DD'),
         actualDone: undefined,
         accepted: undefined,
+        supportHours: values.supportHours,
       };
       const created = await createRescanRecord(record);
       setRecords([created, ...records]);
@@ -110,6 +112,9 @@ export default function RescanLog() {
             </Form.Item>
             <Form.Item name="executors" label="执行人（逗号分隔）" rules={[{ required: true }]}>
               <Input placeholder="如：王静,谢婷" />
+            </Form.Item>
+            <Form.Item name="supportHours" label="支援时长（小时）">
+              <InputNumber style={{ width: '100%' }} min={0} precision={2} />
             </Form.Item>
             <Form.Item name="expectedDone" label="预计完成时间" rules={[{ required: true }]}>
               <DatePicker style={{ width: '100%' }} />

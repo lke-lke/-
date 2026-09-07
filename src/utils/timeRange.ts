@@ -23,10 +23,10 @@ export function isDateInRange(value: string | undefined, range: DateRange): bool
 }
 
 export function taskOverlapsRange(
-  task: { createdAt: string; deadline?: string; expectedDeadline?: string },
+  task: { createdAt: string; dispatchedAt?: string; deadline?: string; expectedDeadline?: string },
   range: DateRange,
 ): boolean {
-  const taskStart = dayjs(task.createdAt);
+  const taskStart = dayjs(task.dispatchedAt || task.createdAt);
   const taskEndValue = task.deadline || task.expectedDeadline;
   const startsBeforeRangeEnds = !taskStart.isAfter(range[1], 'day');
   const endsAfterRangeStarts = !taskEndValue || !dayjs(taskEndValue).isBefore(range[0], 'day');

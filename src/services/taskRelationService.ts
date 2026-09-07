@@ -13,6 +13,10 @@ const aiGroups: Record<string, string[]> = {
   'doc分评测': ['doc分标注'],
 };
 
+// 2026-09 真实台账中已出现、但原始 66 项关系基线未包含的动态分组。
+// 未确认更细主任务前，显式归入“临时任务”，避免跨任务归属误推断。
+const aiLedgerAdditions = ['AI试衣图/商品图采集', '效果评测-美妆'];
+
 const aiIndependent = ['极端+GSB整体服装维度（2模型）', '鞋包帽定向叶子类目异常+极端', '异常+极端标注-服装维度', '类目信息一致性标注-1', '风控数据拦截情况评测', '身型问题标注', '用户图性别标注', '口红训练数据异常标注', '帽子放大效果评测', '用户图&穿法标注', '用户图&服饰素材标注', '试衣上身图判断', '用户图标注-训练数据', '点踩原因主观判断', '点踩用户图&极端标注', '点踩原因主观判断-服装细项', '场景模型ai感训练集', '鞋包帽生成图一致性标注', '一致性标注', '帽穿模标注', '用户图样本判断', 'GPT层级L1-2标注', '类目判断', '用户图补标', '用户图补标2', '廓形摸排补标', '用户图人像大小比例补标', '穿法评测', '社区虚拟形象问题下钻', '人像评测', '美学分析AI评测', '质培-评测集标注提升', 'pair对标注', '模特图包类标注', '素材分类标注', '商家DOC分放宽评测', '商家DOC分原因标注下钻', '商家DOC分放宽评测2'];
 
 const lookieGroups: Record<string, string[]> = {
@@ -33,7 +37,7 @@ function seeds(ownership: string, groups: Record<string, string[]>, independent:
 }
 
 let localRelations: TaskRelation[] = [
-  ...seeds('AI试穿-模型评测', aiGroups, aiIndependent),
+  ...seeds('AI试穿-模型评测', aiGroups, [...aiLedgerAdditions, ...aiIndependent]),
   ...seeds('lookie横向评测', lookieGroups, lookieIndependent),
 ];
 

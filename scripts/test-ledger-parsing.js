@@ -1,0 +1,21 @@
+const assert = require('node:assert/strict');
+const { normalizeLookup, parseAcceptance, parseDate, parseDifficulty, parseExternalId, parseHours, parseNumber, splitPeople, text } = require('../src/utils/ledgerParsing');
+
+assert.equal(text('朱\u200b雨\u200b婷'), '朱 雨 婷');
+assert.equal(normalizeLookup(' Lookie-横向评测 '), 'lookie横向评测');
+assert.deepEqual(splitPeople('成研、郑倩君 / 王星宇'), ['成研', '郑倩君', '王星宇']);
+assert.equal(parseNumber('1.2万').value, 12000);
+assert.equal(parseNumber('无法识别').issue.code, 'INVALID_NUMBER');
+assert.equal(parseHours('7.5h').value, 7.5);
+assert.equal(parseDate(45505, '任务下发时间').value, '2024-08-01');
+assert.equal(parseExternalId('001234567890123456').value, '001234567890123456');
+assert.equal(parseExternalId('线下表').value, undefined);
+assert.equal(parseExternalId('oneday').value, undefined);
+assert.equal(parseExternalId('1D作业').value, undefined);
+assert.equal(parseExternalId(207153123456789012).issue.code, 'UNSAFE_TASK_ID');
+assert.equal(parseDifficulty('3星').value, 3);
+assert.equal(parseDifficulty(6).issue.code, 'INVALID_DIFFICULTY');
+assert.equal(parseAcceptance('是').value, true);
+assert.equal(parseAcceptance('不通过').value, false);
+assert.equal(parseAcceptance('待定').issue.code, 'INVALID_ACCEPTANCE');
+console.log('ledger parsing contract: ok');

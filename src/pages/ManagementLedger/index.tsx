@@ -8,6 +8,8 @@ import { getAllDocuments, handleAdminRejection, leaderReviewDocument, reviewDocu
 import { getTasks } from '@/services/taskService';
 import { isGlobalManagerRole, useActor } from '@/contexts/ActorContext';
 import { useNavigate } from 'react-router-dom';
+import { USE_MOCK } from '@/services/db';
+import { getOpenTodos, SystemTodo } from '@/services/todoService';
 
 type TodoKind = 'incomplete' | 'document' | 'revision' | 'risk';
 interface TodoItem { id: string; kind: TodoKind; title: string; detail: string; time: string; taskId: string; priority: number; documentId?: string; }
@@ -20,7 +22,7 @@ const todoStyle: Record<TodoKind, { label: string; color: string; background: st
 };
 
 function SummaryCard({ title, value, hint, icon, color, onClick, active }: { title: string; value: number; hint: string; icon: React.ReactNode; color: string; onClick: () => void; active: boolean }) {
-  return <Card hoverable onClick={onClick} style={{ cursor: 'pointer', borderColor: active ? color : undefined, boxShadow: active ? `0 0 0 2px ${color}22` : undefined }} bodyStyle={{ padding: 22 }}>
+  return <Card hoverable onClick={onClick} style={{ cursor: 'pointer', borderColor: active ? color : undefined, boxShadow: active ? `0 0 0 2px ${color}22` : undefined }} styles={{ body: { padding: 22 } }}>
     <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}><span style={{ width: 46, height: 46, borderRadius: 14, display: 'inline-flex', justifyContent: 'center', alignItems: 'center', color, background: `${color}18`, fontSize: 22 }}>{icon}</span><div><div style={{ color: 'var(--ink-soft)', fontSize: 14 }}>{title}</div><div style={{ fontSize: 30, lineHeight: 1.2, fontWeight: 700 }}>{value}</div><div style={{ color: 'var(--ink-soft)', fontSize: 12, marginTop: 4 }}>{hint}</div></div></div>
   </Card>;
 }
@@ -30,6 +32,7 @@ export default function ManagementLedger() {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [systemTodos, setSystemTodos] = useState<SystemTodo[]>([]);
   const [focus, setFocus] = useState<TodoKind | 'all'>('all');
   const [selectedTeam, setSelectedTeam] = useState<string>();
   const [adminReviewTarget, setAdminReviewTarget] = useState<Document | null>(null);
@@ -39,7 +42,7 @@ export default function ManagementLedger() {
   const [leaderReviewAction, setLeaderReviewAction] = useState<'complete' | 'submit_admin' | 'reject_member' | 'resubmit_admin' | 'return_member'>('complete');
   const [leaderReviewComment, setLeaderReviewComment] = useState('');
 
-  useEffect(() => { getTasks().then(setTasks); getAllDocuments().then(setDocuments); }, []);
+  useEffect(() => { getTasks().then(setTasks); getAllDocuments().then(setDocuments); getOpenTodos().then(setSystemTodos); }, []);
 
   const isAdmin = isGlobalManagerRole(actor.role);
   const groupTasks = useMemo(() => tasks.filter(task => isAdmin ? !selectedTeam || task.team === selectedTeam : task.team === actor.team), [tasks, actor.team, isAdmin, selectedTeam]);
@@ -59,12 +62,22 @@ export default function ManagementLedger() {
   const deliveryProgress = useMemo(() => latestDocuments.filter(document => taskById.has(document.taskId) && document.reviewRoute === 'leader_then_admin').map(document => ({ ...document, task: taskById.get(document.taskId)! })), [latestDocuments, taskById]);
   const riskTasks = ongoing.filter(task => task.alerts.length > 0 || (task.deadline && dayjs(task.deadline).isBefore(dayjs(), 'day')));
 
-  const allTodos = useMemo<TodoItem[]>(() => [
-    ...(!isAdmin ? pendingCompletion.map(task => ({ id: `incomplete-${task.id}`, kind: 'incomplete' as const, title: `完善任务字段：${task.name}`, detail: `${task.assignee || '待分配'} · 请补齐任务挂链及两类截止时间`, time: task.createdAt, taskId: task.id, priority: 1 })) : []),
+  const derivedTodos = useMemo<TodoItem[]>(() => [
+    ...(!isAdmin ? pendingCompletion.map(task => ({ id: `incomplete-${task.id}`, kind: 'incomplete' as const, title: `完善任务字段：${task.name}`, detail: `${task.assignee || '待分配'} · 请补齐任务挂链、主负责人、预计截止时间和初始难度`, time: task.createdAt, taskId: task.id, priority: 1 })) : []),
     ...pendingDocuments.map(document => { const task = taskById.get(document.taskId)!; return { id: `document-${document.id}`, kind: 'document' as const, title: `${isAdmin ? '审核组长交付物' : '确认交付物'}：${document.name}`, detail: `${document.uploader} 提交 · ${task.name}`, time: isAdmin ? document.submittedToAdminAt || document.uploadedAt : document.uploadedAt, taskId: task.id, priority: 2, documentId: document.id }; }),
     ...revisions.map(document => { const task = taskById.get(document.taskId)!; return { id: `revision-${document.id}`, kind: 'revision' as const, title: `${isAdmin ? '处理返修交付物' : '处理管理员驳回'}：${document.name}`, detail: document.adminReviewComment || `任务：${task.name}`, time: document.adminReviewedAt || document.uploadedAt, taskId: task.id, priority: 0, documentId: document.id }; }),
     ...(!isAdmin ? riskTasks.map(task => ({ id: `risk-${task.id}`, kind: 'risk' as const, title: `跟进进行中任务：${task.name}`, detail: task.alerts[0]?.message || '任务已逾期，请确认下一步处理', time: task.deadline, taskId: task.id, priority: 3 })) : []),
   ].sort((a, b) => a.priority - b.priority || dayjs(a.time).valueOf() - dayjs(b.time).valueOf()), [pendingCompletion, pendingDocuments, revisions, riskTasks, taskById, isAdmin]);
+  const allTodos = useMemo<TodoItem[]>(() => USE_MOCK ? derivedTodos : systemTodos.filter(todo => !isAdmin || ['deliverable_pending_admin_review', 'deliverable_leader_revision', 'deliverable_revision_tracking'].includes(todo.type)).map(todo => ({
+    id: todo.id,
+    kind: (todo.type === 'task_completion' ? 'incomplete' : todo.type.includes('revision') ? 'revision' : todo.type.includes('deliverable') ? 'document' : 'risk') as TodoKind,
+    title: todo.title,
+    detail: todo.description || '',
+    time: todo.dueAt || todo.createdAt,
+    taskId: todo.taskId || '',
+    documentId: todo.documentId,
+    priority: todo.priority === 'urgent' ? 0 : todo.priority === 'high' ? 1 : 2,
+  })).sort((a, b) => a.priority - b.priority || dayjs(a.time).valueOf() - dayjs(b.time).valueOf()), [derivedTodos, systemTodos, isAdmin]);
   const todoItems = focus === 'all' ? allTodos : allTodos.filter(item => item.kind === focus);
 
   const people = useMemo(() => {
@@ -116,10 +129,10 @@ export default function ManagementLedger() {
       <SummaryCard title={isAdmin ? '返修跟进' : '待处理返修'} value={revisions.length} hint={isAdmin ? '已驳回，等待组长重提' : '管理员驳回，需修改重提'} icon={<ReloadOutlined />} color="#b97d7b" active={focus === 'revision'} onClick={() => setFocus(focus === 'revision' ? 'all' : 'revision')} />
     </div>
     <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? 'minmax(0, 1fr)' : 'minmax(0, 2fr) minmax(320px, .9fr)', gap: 20 }}>
-      <Card title={<div><span className="eyebrow">TO-DO</span><div style={{ fontSize: 22, marginTop: 4 }}>我的待办 <Badge count={allTodos.length} overflowCount={99} style={{ marginLeft: 8, backgroundColor: '#806c79' }} /></div></div>} extra={focus !== 'all' && <Button type="link" onClick={() => setFocus('all')}>查看全部</Button>} bodyStyle={{ paddingTop: 10 }}>
+      <Card title={<div><span className="eyebrow">TO-DO</span><div style={{ fontSize: 22, marginTop: 4 }}>我的待办 <Badge count={allTodos.length} overflowCount={99} style={{ marginLeft: 8, backgroundColor: '#806c79' }} /></div></div>} extra={focus !== 'all' && <Button type="link" onClick={() => setFocus('all')}>查看全部</Button>} styles={{ body: { paddingTop: 10 } }}>
         {todoItems.length ? <div>{todoItems.map(item => { const meta = todoStyle[item.kind]; const document = item.documentId ? documents.find(row => row.id === item.documentId) : undefined; const opensReview = Boolean(document && (isAdmin ? document.workflowStatus === 'pending_admin_review' : item.kind === 'document' || item.kind === 'revision')); return <div key={item.id} style={{ padding: '17px 2px', borderBottom: '1px solid var(--line)', display: 'flex', gap: 12, alignItems: 'center' }}><span style={{ width: 34, height: 34, borderRadius: 10, background: meta.background, color: meta.color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{item.kind === 'incomplete' ? <EditOutlined /> : item.kind === 'revision' ? <ReloadOutlined /> : item.kind === 'document' ? <CheckCircleOutlined /> : <ClockCircleOutlined />}</span><div style={{ flex: 1, minWidth: 0 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><strong>{item.title}</strong><Tag color={meta.color}>{meta.label}</Tag></div><div style={{ color: 'var(--ink-soft)', fontSize: 13, marginTop: 5 }}>{item.detail}</div></div><div style={{ textAlign: 'right', color: 'var(--ink-soft)', fontSize: 12, whiteSpace: 'nowrap' }}><div>{item.time || '待处理'}</div><Button type="link" size="small" icon={<RightOutlined />} onClick={() => opensReview && document ? isAdmin ? openAdminReview(document) : openLeaderReview(document) : navigate(`/tasks/${item.taskId}`)}>{opensReview ? (isAdmin ? '审核' : '处理') : '查看进度'}</Button></div></div>; })}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前没有待处理事项" />}
       </Card>
-      {!isAdmin && <Card title={<div><span className="eyebrow">PEOPLE</span><div style={{ fontSize: 22, marginTop: 4 }}>人员动态</div></div>} bodyStyle={{ paddingTop: 8 }}>
+      {!isAdmin && <Card title={<div><span className="eyebrow">PEOPLE</span><div style={{ fontSize: 22, marginTop: 4 }}>人员动态</div></div>} styles={{ body: { paddingTop: 8 } }}>
         <div style={{ color: 'var(--ink-soft)', fontSize: 12, marginBottom: 6 }}>{isAdmin ? '按组长汇总其负责任务、待完善字段和提交管理员审核的交付物。' : '按成员汇总进行中任务、待完善字段和待确认交付物。'}</div>
         {people.map(person => <div key={person.member} style={{ padding: '14px 0', borderBottom: '1px solid var(--line)' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><Avatar style={{ backgroundColor: '#806c79' }}>{person.member.slice(0, 1)}</Avatar><strong>{person.member}</strong></div><Button size="small" type="link" onClick={() => navigate('/tasks/register')}>查看</Button></div><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '9px 0 7px' }}><Tag color="#928e5e">进行中 {person.active}</Tag>{person.incomplete > 0 && <Tag color="#806c79">待完善 {person.incomplete}</Tag>}{person.documentsToConfirm > 0 && <Tag color="#c1a0ac">待确认交付物 {person.documentsToConfirm}</Tag>}</div><div style={{ color: 'var(--ink-soft)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{person.latest}</div></div>)}
       </Card>}

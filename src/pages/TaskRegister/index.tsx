@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, DatePicker, Empty, Form, Input, InputNumber, Modal, Segmented, Select, Space, Table, message } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { Task, TaskRelation } from '@/types';
-import { ALL_TEAMS, getTaskStatusLabel, TaskStatus, TaskType, WorkNature } from '@/constants';
+import { ALL_TEAMS, getTaskStatusLabel, TEAM_LEADERS, TEAM_MEMBERS, TaskStatus, TaskType, WorkNature, Team } from '@/constants';
 import { createTask, getTasks } from '@/services/taskService';
 import StatusTag from '@/components/StatusTag';
 import DifficultyStars from '@/components/DifficultyStars';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
-import { getTaskRelations } from '@/services/taskRelationService';
+import { getTaskRelations, saveTaskRelation } from '@/services/taskRelationService';
 import { isGlobalManagerRole, useActor } from '@/contexts/ActorContext';
 import TaskCard from '@/components/TaskCard';
 
@@ -21,7 +21,7 @@ const FLOW_STAGES: FlowStage[] = ['待开始', '进行中', '待确认', '已完
 
 const getFlowStage = (status: TaskStatus): FlowStage => {
   if (status === TaskStatus.DONE) return '已完成';
-  if ([TaskStatus.DATA_DONE, TaskStatus.TO_DELIVER, TaskStatus.TO_ACCEPT].includes(status)) return '待确认';
+  if (status === TaskStatus.WAIT_CONFIRM) return '待确认';
   if (status === TaskStatus.IN_PROGRESS) return '进行中';
   return '待开始';
 };
@@ -36,6 +36,7 @@ export default function TaskRegister() {
   const [viewMode, setViewMode] = useState<TaskViewMode>('层级视图');
   const [filterTeam, setFilterTeam] = useState('');
   const [filterAssignee, setFilterAssignee] = useState('');
+  const [selectedFormTeam, setSelectedFormTeam] = useState<Team>();
   const { actor } = useActor();
   const isGlobalManager = isGlobalManagerRole(actor.role);
   const canManage = actor.role !== '组员';
@@ -75,16 +76,31 @@ export default function TaskRegister() {
     form.resetFields();
     setSelectedOwnership('');
     setSelectedMainTask('');
+    setSelectedFormTeam(undefined);
+  };
+
+  const openCreateModal = () => {
+    const initialTeam = actor.role === '组长' ? actor.team : undefined;
+    setSelectedFormTeam(initialTeam);
+    form.setFieldsValue({
+      team: initialTeam,
+      teamLeader: initialTeam ? TEAM_LEADERS[initialTeam] : undefined,
+    });
+    setModalOpen(true);
   };
 
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
       const ownership = values.ownership === CUSTOM ? values.customOwnership?.trim() : values.ownership;
-      const mainTask = values.mainTask === CUSTOM ? values.customMainTask?.trim() : values.mainTask === TEMPORARY ? '-' : values.mainTask;
+      const mainTask = values.mainTask === CUSTOM ? values.customMainTask?.trim() : values.mainTask === TEMPORARY ? '临时任务' : values.mainTask;
       const linkedTask = values.linkedTask === CUSTOM ? values.customLinkedTask?.trim() : values.linkedTask;
       if (!ownership || !mainTask || !linkedTask) return message.warning('请完整填写任务归属、主任务和任务分组。');
-      const relation = relations.find(item => item.ownership === ownership && item.mainTask === mainTask && item.linkedTask === linkedTask);
+      let relation = relations.find(item => item.ownership === ownership && item.mainTask === mainTask && item.linkedTask === linkedTask);
+      if (!relation) {
+        relation = await saveTaskRelation({ ownership, mainTask, linkedTask, active: true });
+        setRelations(current => [...current, relation!]);
+      }
       const task = {
         name: values.name,
         ownership,
@@ -97,22 +113,23 @@ export default function TaskRegister() {
         assignee: values.assignee,
         team: values.team,
         teamLeader: values.teamLeader,
-        dataReporter: values.dataReporter || '',
+        dataReporter: '',
         reviewer: values.reviewer || '',
         dataVolume: values.dataVolume || 0,
         workforce: values.workforce || 0,
         createdAt: dayjs().format('YYYY-MM-DD'),
+        dispatchedAt: dayjs().format('YYYY-MM-DD'),
         expectedDeadline: values.expectedDeadline.format('YYYY-MM-DD'),
-        deadline: values.deadline.format('YYYY-MM-DD'),
+        deadline: '',
         platformTaskId: values.platformTaskId,
-        ruleDocLink: values.ruleDocLink,
         remark: values.remark,
-        difficulty: undefined,
-        initialStatus: TaskStatus.IN_PROGRESS,
+        difficulty: values.difficulty,
+        mappingStatus: 'complete',
+        initialStatus: TaskStatus.PENDING,
       } as any;
       const created = await createTask(task);
       setTasks(current => [created, ...current]);
-      message.success('任务已创建并进入进行中。');
+      message.success('任务已创建并进入待开始。');
       closeModal();
     } catch (_) { /* 表单提示由组件处理 */ }
   };
@@ -133,15 +150,15 @@ export default function TaskRegister() {
     { title: '难度', dataIndex: 'difficulty', width: 120, render: (value: number) => value ? <DifficultyStars value={value} readOnly /> : '-' },
   ];
   const columns = isGlobalManager
-    ? [...hierarchyColumns, taskNameColumn, statusColumn, ...executionColumns]
+    ? [...hierarchyColumns, taskNameColumn, statusColumn, ...executionColumns.slice(0, 3)]
     : [taskNameColumn, statusColumn, ...hierarchyColumns, ...executionColumns];
 
   return <div>
     <div className="page-title-row">
       <div><h2 style={{ margin: 0 }}>{pageTitle}</h2><p style={{ color: 'var(--text-secondary)', margin: '6px 0 0' }}>任务归属、主任务和任务分组可从已维护关系选择，也支持为本次任务自定义填写。</p></div>
-      {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>新建任务</Button>}
+      {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>新建任务</Button>}
     </div>
-    {actor.role === '组长' && pendingCompletion.length > 0 && <Alert type="warning" showIcon style={{ marginBottom: 16 }} message={`有 ${pendingCompletion.length} 个台账导入任务待完善`} description="请进入任务详情补齐预计截止时间、实际截止时间及任务挂链信息；保存完整后任务会自动进入“进行中”。" />}
+    {actor.role === '组长' && pendingCompletion.length > 0 && <Alert type="warning" showIcon style={{ marginBottom: 16 }} message={`有 ${pendingCompletion.length} 个台账导入任务待完善`} description="请进入任务详情确认挂链、主负责人、预计截止时间和下发难度；保存后任务进入“待开始”。" />}
     {canManage && <Card className="task-view-switcher">
       <div className="task-view-switcher-row">
         <div><strong>任务视图</strong><span>按挂链字段查询，或按流程阶段推进任务</span></div>
@@ -150,7 +167,7 @@ export default function TaskRegister() {
     </Card>}
     {viewMode === '层级视图' || !canManage ? <Table dataSource={visibleTasks} columns={columns} rowKey="id" size="small" pagination={{ pageSize: 15 }} scroll={{ x: 1550 }} /> : <div className="embedded-flow-board">
       <div className="embedded-flow-toolbar">
-        <div><h3>任务流转看板</h3><p>待完善任务归入“待开始”；数据完成、待交付和待验收统一归入“待确认”。</p></div>
+      <div><h3>任务流转看板</h3><p>待完善任务暂归入“待开始”；作业与交付物完成后统一进入“待确认”。</p></div>
         <Space wrap>
           {isGlobalManager && <Select allowClear placeholder="筛选小组" value={filterTeam || undefined} style={{ width: 150 }} options={ALL_TEAMS.map(value => ({ label: value, value }))} onChange={value => { setFilterTeam(value || ''); setFilterAssignee(''); }} />}
           <Select allowClear placeholder="筛选负责人" value={filterAssignee || undefined} style={{ width: 150 }} options={assigneeOptions.map(value => ({ label: value, value }))} onChange={value => setFilterAssignee(value || '')} />
@@ -166,7 +183,7 @@ export default function TaskRegister() {
         </section>)}
       </div>
     </div>}
-    <Modal title="手动新建任务" open={modalOpen} onOk={handleSubmit} onCancel={closeModal} width={760} okText="创建并开始">
+    <Modal title="手动新建任务" open={modalOpen} onOk={handleSubmit} onCancel={closeModal} width={760} okText="创建任务">
       <Form form={form} layout="vertical" style={{ maxHeight: 540, overflow: 'auto' }}>
         <Form.Item name="name" label="任务名称" rules={[{ required: true }]}><Input placeholder="如：0701-叠穿生成图评测标注" /></Form.Item>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -178,18 +195,16 @@ export default function TaskRegister() {
           <Form.Item shouldUpdate noStyle>{() => form.getFieldValue('linkedTask') === CUSTOM && <Form.Item name="customLinkedTask" label="自定义任务分组" rules={[{ required: true }]}><Input /></Form.Item>}</Form.Item>
           <Form.Item name="workNature" label="作业性质" rules={[{ required: true }]}><Select options={Object.values(WorkNature).map(value => ({ label: value, value }))} /></Form.Item>
           <Form.Item name="taskType" label="任务类型" rules={[{ required: true }]}><Select options={Object.values(TaskType).map(value => ({ label: value, value }))} /></Form.Item>
-          <Form.Item name="assignee" label="主负责人" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="team" label="所属小组" rules={[{ required: true }]}><Select options={ALL_TEAMS.map(value => ({ label: value, value }))} /></Form.Item>
-          <Form.Item name="teamLeader" label="对应组长" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="team" label="所属小组" rules={[{ required: true }]}><Select disabled={actor.role === '组长'} options={(actor.role === '组长' && actor.team ? [actor.team] : ALL_TEAMS).map(value => ({ label: value, value }))} onChange={(value: Team) => { setSelectedFormTeam(value); form.setFieldsValue({ teamLeader: TEAM_LEADERS[value], assignee: undefined }); }} /></Form.Item>
+          <Form.Item name="teamLeader" label="对应组长" rules={[{ required: true }]}><Input disabled /></Form.Item>
+          <Form.Item name="assignee" label="主负责人" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" disabled={!selectedFormTeam} placeholder={selectedFormTeam ? '选择本组成员' : '请先选择所属小组'} options={(selectedFormTeam ? TEAM_MEMBERS[selectedFormTeam] : []).map(value => ({ label: value, value }))} /></Form.Item>
           <Form.Item name="expectedDeadline" label="预计截止时间" rules={[{ required: true }]}><DatePicker style={{ width: '100%' }} /></Form.Item>
-          <Form.Item name="deadline" label="实际截止时间" rules={[{ required: true }]}><DatePicker style={{ width: '100%' }} /></Form.Item>
+          <Form.Item name="difficulty" label="下发难度" rules={[{ required: true }]}><InputNumber min={1} max={5} style={{ width: '100%' }} addonAfter="星" /></Form.Item>
           <Form.Item name="dataVolume" label="数据量级" rules={[{ required: true }]}><InputNumber style={{ width: '100%' }} min={0} /></Form.Item>
           <Form.Item name="workforce" label="作业人力"><InputNumber style={{ width: '100%' }} min={0} /></Form.Item>
-          <Form.Item name="dataReporter" label="数据报告同学"><Input /></Form.Item>
           <Form.Item name="reviewer" label="验收同学"><Input /></Form.Item>
         </div>
         <Form.Item name="platformTaskId" label="作业平台任务 ID"><Input placeholder="用于关联标注平台进度" /></Form.Item>
-        <Form.Item name="ruleDocLink" label="规则文档链接"><Input placeholder="已有规则文档时填写" /></Form.Item>
         <Form.Item name="remark" label="备注"><Input.TextArea rows={2} /></Form.Item>
       </Form>
     </Modal>

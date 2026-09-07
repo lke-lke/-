@@ -7,11 +7,9 @@ import TaskCard from '@/components/TaskCard';
 import { useNavigate } from 'react-router-dom';
 
 const STATUS_COLUMNS: TaskStatus[] = [
-  TaskStatus.PENDING_INFO,
   TaskStatus.PENDING,
   TaskStatus.IN_PROGRESS,
-  TaskStatus.DATA_DONE,
-  TaskStatus.TO_ACCEPT,
+  TaskStatus.WAIT_CONFIRM,
   TaskStatus.DONE,
 ];
 
@@ -19,9 +17,7 @@ const COLUMN_COLORS: Record<TaskStatus, string> = {
   [TaskStatus.PENDING_INFO]: '#f4e7dc',
   [TaskStatus.PENDING]: '#f2ece7',
   [TaskStatus.IN_PROGRESS]: '#eee4e7',
-  [TaskStatus.DATA_DONE]: '#f0d9e4',
-  [TaskStatus.TO_DELIVER]: '#f0d9e4',
-  [TaskStatus.TO_ACCEPT]: '#ecc4c3',
+  [TaskStatus.WAIT_CONFIRM]: '#ecc4c3',
   [TaskStatus.DONE]: '#e3e1c7',
 };
 
@@ -38,8 +34,8 @@ export default function Kanban() {
 
   useEffect(() => {
     getTasks().then(tasks => setGrouped(tasks.reduce((result, task) => {
-      // “待交付”不再单列展示，合并进数据完成阶段，避免任务在看板中消失。
-      const columnStatus = task.status === TaskStatus.TO_DELIVER ? TaskStatus.DATA_DONE : task.status;
+      // 待完善仍由组长工作台单独提醒；流转看板暂归入待开始列，避免任务消失。
+      const columnStatus = task.status === TaskStatus.PENDING_INFO ? TaskStatus.PENDING : task.status;
       if (!result[columnStatus]) result[columnStatus] = [];
       result[columnStatus].push(task);
       return result;

@@ -11,7 +11,8 @@
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
     "db:lint": "supabase db lint --local --level warning",
-    "db:types": "supabase gen types typescript --local"
+    "db:types": "supabase gen types typescript --local",
+    "test:parsing": "node scripts/test-ledger-parsing.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.114.0",

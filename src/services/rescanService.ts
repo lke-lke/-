@@ -14,6 +14,9 @@ const toRecord = (row: any): RescanRecord => ({
   expectedDone: (row.expectedDone ?? row.expected_done) ? String(row.expectedDone ?? row.expected_done).slice(0, 10) : '',
   actualDone: (row.actualDone ?? row.actual_done) ? String(row.actualDone ?? row.actual_done).slice(0, 10) : undefined,
   createdAt: row.createdAt ?? String(row.created_at).slice(0, 10),
+  supportHours: row.supportHours ?? row.support_hours,
+  sourceResult: row.sourceResult ?? row.source_result,
+  acceptanceDetail: row.acceptanceDetail ?? row.acceptance_detail,
 });
 
 const toRecordRow = (record: Omit<RescanRecord, 'id' | 'createdAt'>) => ({
@@ -27,6 +30,9 @@ const toRecordRow = (record: Omit<RescanRecord, 'id' | 'createdAt'>) => ({
   expected_done: record.expectedDone,
   actual_done: record.actualDone,
   accepted: record.accepted,
+  support_hours: record.supportHours,
+  source_result: record.sourceResult,
+  acceptance_detail: record.acceptanceDetail,
 });
 
 export async function getRescanRecords(filters?: { taskId?: string; assistant?: string }): Promise<RescanRecord[]> {

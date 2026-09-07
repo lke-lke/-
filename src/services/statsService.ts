@@ -2,6 +2,8 @@ import { OverviewStats, Member, Task, Document, RescanRecord } from '@/types';
 import { DocType, TaskStatus, DIFFICULTY_POINTS, ALL_TEAMS, TEAM_MEMBERS, TEAM_LEADERS, Team } from '@/constants';
 import dayjs from 'dayjs';
 import { DateRange, isDateInRange } from '@/utils/timeRange';
+import { USE_MOCK } from './db';
+import { ensureOnedayClient } from '@/onedaycloud';
 
 const TODAY = dayjs();
 
@@ -35,12 +37,12 @@ export interface TeamOverviewFacts {
   avgProgress: number;
   difficultyCounts: Record<number, number>;
   unratedTasks: number;
-  periodActions: { ruleOrRequirementUploads: number; reportUploads: number; rescanRecords: number };
+  periodActions: { ruleOrRequirementUploads: number; reportUploads: number; rescanRecords: number; rescanHours: number };
   activeTaskDetails: Task[];
   tasks: Task[];
 }
 
-export type TaskBoardStatus = '待开始' | '进行中' | '回扫中' | '待确认' | '已完成';
+export type TaskBoardStatus = '待开始' | '进行中' | '待确认' | '已完成';
 
 export interface TeamTaskPeriodStats {
   team: Team;
@@ -48,18 +50,16 @@ export interface TeamTaskPeriodStats {
   statuses: Record<TaskBoardStatus, number>;
 }
 
-function buildTeamTaskStatusStats(tasks: Task[], rescans: RescanRecord[]): TeamTaskPeriodStats[] {
-  const hasActiveRescan = (taskId: string) => rescans.some(record => record.originalTaskId === taskId && !record.actualDone && record.accepted !== true);
+function buildTeamTaskStatusStats(tasks: Task[], _rescans: RescanRecord[]): TeamTaskPeriodStats[] {
   const getStatus = (task: Task): TaskBoardStatus => {
     if (task.status === TaskStatus.DONE) return '已完成';
-    if (hasActiveRescan(task.id)) return '回扫中';
-    if (task.status === TaskStatus.TO_ACCEPT) return '待确认';
+    if (task.status === TaskStatus.WAIT_CONFIRM) return '待确认';
     if (task.status === TaskStatus.PENDING || task.status === TaskStatus.PENDING_INFO) return '待开始';
     return '进行中';
   };
   return ALL_TEAMS.map(team => {
     const groupTasks = tasks.filter(task => task.team === team);
-    const statuses: Record<TaskBoardStatus, number> = { 待开始: 0, 进行中: 0, 回扫中: 0, 待确认: 0, 已完成: 0 };
+    const statuses: Record<TaskBoardStatus, number> = { 待开始: 0, 进行中: 0, 待确认: 0, 已完成: 0 };
     groupTasks.forEach(task => { statuses[getStatus(task)] += 1; });
     return { team, total: groupTasks.length, statuses };
   });
@@ -75,6 +75,20 @@ export function getTeamTaskPeriodStats(tasks: Task[], rescans: RescanRecord[], s
     return (date.isAfter(start.subtract(1, 'day')) || date.isSame(start, 'day')) && (date.isBefore(end.add(1, 'day')) || date.isSame(end, 'day'));
   });
   return buildTeamTaskStatusStats(inRangeTasks, rescans);
+}
+
+export async function getTeamTaskPeriodStatsFromSource(tasks: Task[], start: dayjs.Dayjs, end: dayjs.Dayjs): Promise<TeamTaskPeriodStats[]> {
+  if (USE_MOCK) return getTeamTaskPeriodStats(tasks, [], start, end);
+  const client = ensureOnedayClient(); if (!client) return [];
+  const { data, error } = await client.supabase.rpc('team_task_status_summary', {
+    p_start: start.startOf('day').toISOString(), p_end: end.add(1, 'day').startOf('day').toISOString(),
+  });
+  if (error) throw error;
+  const rows = new Map((data || []).map((row: any) => [row.team, row]));
+  return ALL_TEAMS.map(team => {
+    const row: any = rows.get(team);
+    return { team, total: Number(row?.total || 0), statuses: { 待开始: Number(row?.pending || 0), 进行中: Number(row?.in_progress || 0), 待确认: Number(row?.pending_confirmation || 0), 已完成: Number(row?.completed || 0) } };
+  });
 }
 
 export function getTeamOverviewFacts(tasks: Task[], docs: Document[], rescans: RescanRecord[], range?: DateRange): TeamOverviewFacts[] {
@@ -97,7 +111,7 @@ export function getTeamOverviewFacts(tasks: Task[], docs: Document[], rescans: R
     const overdueTasks = active.filter(task => task.deadline && dayjs(task.deadline).isBefore(riskReferenceDate, 'day')).length;
     return {
       team, leader: TEAM_LEADERS[team], activeTasks: active.length,
-      activeDataVolume: teamTasks.reduce((sum, task) => sum + task.dataVolume, 0),
+      activeDataVolume: active.reduce((sum, task) => sum + task.dataVolume, 0),
       riskTasks: active.filter(task => task.alerts.length > 0 || (task.deadline && dayjs(task.deadline).isBefore(riskReferenceDate, 'day'))).length,
       overdueTasks,
       overdueRate: active.length ? overdueTasks / active.length : 0,
@@ -107,6 +121,7 @@ export function getTeamOverviewFacts(tasks: Task[], docs: Document[], rescans: R
         ruleOrRequirementUploads: teamDocs.filter(doc => [DocType.RULE, DocType.REQUIREMENT].includes(doc.docType)).length,
         reportUploads: teamDocs.filter(doc => [DocType.EVAL_REPORT, DocType.OTHER].includes(doc.docType)).length,
         rescanRecords: teamRescanRecords.length,
+        rescanHours: teamRescanRecords.reduce((sum, record) => sum + (record.supportHours || 0), 0),
       },
       activeTaskDetails: sortedTasks,
       tasks: sortedTasks.slice(0, 4),
@@ -155,7 +170,7 @@ export function getOverviewStats(tasks: Task[]): OverviewStats {
   const onTimeRate = completedWithDeadline.length > 0
     ? completedWithDeadline.filter(t => !dayjs(t.createdAt).isAfter(dayjs(t.deadline))).length / completedWithDeadline.length
     : 1;
-  const dataDoneTasks = tasks.filter(t => [TaskStatus.DATA_DONE, TaskStatus.TO_DELIVER, TaskStatus.TO_ACCEPT, TaskStatus.DONE].includes(t.status));
+  const dataDoneTasks = tasks.filter(t => [TaskStatus.WAIT_CONFIRM, TaskStatus.DONE].includes(t.status));
   const docComplete = dataDoneTasks.filter(t => t.docCompleteness === 1).length;
   const docCompleteRate = dataDoneTasks.length > 0 ? docComplete / dataDoneTasks.length : 0;
   const alertTasks = tasks.filter(t => t.alerts.length > 0).length;

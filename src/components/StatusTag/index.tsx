@@ -5,9 +5,7 @@ const STATUS_COLOR: Record<TaskStatus, string> = {
   [TaskStatus.PENDING_INFO]: '#b58c62',
   [TaskStatus.PENDING]: '#ddd3c9',
   [TaskStatus.IN_PROGRESS]: '#806c79',
-  [TaskStatus.DATA_DONE]: '#c1a0ac',
-  [TaskStatus.TO_DELIVER]: '#f0d9e4',
-  [TaskStatus.TO_ACCEPT]: '#ecc4c3',
+  [TaskStatus.WAIT_CONFIRM]: '#c1a0ac',
   [TaskStatus.DONE]: '#928e5e',
 };
 

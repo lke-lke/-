@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Card, Col, DatePicker, Progress, Row, Segmented, Table, Tag } from 'antd';
-import { WarningFilled } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
 import { Team } from '@/constants';
 import { getTasks } from '@/services/taskService';
 import { getAllDocuments } from '@/services/documentService';
 import { getRescanRecords } from '@/services/rescanService';
-import { getTeamOverviewFacts, getTeamTaskStatusStats, TeamOverviewFacts, TeamTaskPeriodStats } from '@/services/statsService';
+import { getTeamOverviewFacts, getTeamTaskPeriodStatsFromSource, TeamOverviewFacts, TeamTaskPeriodStats } from '@/services/statsService';
 import DifficultyStars from '@/components/DifficultyStars';
 import { isGlobalManagerRole, useActor } from '@/contexts/ActorContext';
 import { DateRange, formatCompanyQuarter, getPeriodRange, PeriodMode, taskOverlapsRange } from '@/utils/timeRange';
@@ -28,13 +27,6 @@ const STATUS_COLUMNS = [
   { key: '待确认', color: '#c1a0ac' },
   { key: '已完成', color: '#928e5e' },
 ] as const;
-
-function taskAction(task: TeamOverviewFacts['tasks'][number]) {
-  if (task.alerts.length) return task.alerts[0].message;
-  if (task.progress < 1) return '跟进作业平台进度';
-  if (task.docCompleteness < 1) return '补齐交付文档';
-  return '等待验收/结项确认';
-}
 
 function DifficultyBreakdown({ facts }: { facts: TeamOverviewFacts }) {
   return <div className="difficulty-breakdown">
@@ -57,12 +49,12 @@ export default function Overview() {
   const selectedRange = useMemo(() => getPeriodRange(periodMode, anchorDate, customRange), [periodMode, anchorDate, customRange]);
 
   useEffect(() => {
-    Promise.all([getTasks(), getAllDocuments(), getRescanRecords()]).then(([tasks, docs, rescans]) => {
+    Promise.all([getTasks(), getAllDocuments(), getRescanRecords()]).then(async ([tasks, docs, rescans]) => {
       const scopedTasks = isGlobalManager ? tasks : actor.role === '组长' ? tasks.filter(task => task.team === actor.team) : tasks.filter(task => task.assignee === actor.name || task.participantNames?.includes(actor.name));
       const periodTasks = isGlobalManager ? scopedTasks.filter(task => taskOverlapsRange(task, selectedRange)) : scopedTasks;
       const shownTeams = isGlobalManager ? getTeamOverviewFacts(periodTasks, docs, rescans, selectedRange) : getTeamOverviewFacts(periodTasks, docs, rescans).filter(team => team.team === actor.team);
       setTeams(shownTeams);
-      setTaskStatusRows(getTeamTaskStatusStats(periodTasks, rescans));
+      setTaskStatusRows(await getTeamTaskPeriodStatsFromSource(periodTasks, selectedRange[0], selectedRange[1]));
     });
   }, [actor, isGlobalManager, selectedRange]);
 
@@ -88,7 +80,7 @@ export default function Overview() {
         <Tag color="blue">统计区间：{selectedRange[0].format('YYYY-MM-DD')} 至 {selectedRange[1].format('YYYY-MM-DD')}</Tag>
       </div>
     </Card>}
-    <Alert showIcon type="info" className="overview-info" message={actor.role === '组员' ? '工作记录提交后，需要组长确认才会计入本周工作量。' : isGlobalManager ? '下方全部板块已统一使用所选时间区间；平台进度暂显示任务的最新进度。' : '“本周管理动作”仅统计已上传文档和已登记回扫；文档验收和标准工作量规则接入后，将在此基础上补充。'} />
+    <Alert showIcon type="info" className="overview-info" message={actor.role === '组员' ? '工作记录提交后，需要组长确认才会计入本周工作量。' : isGlobalManager ? '下方全部板块已统一使用所选时间区间；平台进度暂显示任务的最新进度。' : '“本周管理动作”统计本组已上传文档、回扫次数及支持工时；已确认客观标签会在任务结项后计入人员工作量。'} />
 
     {isGlobalManager ? <Card className="overview-summary-card" title="各组任务状态明细">
       <Table rowKey="team" pagination={false} dataSource={taskStatusRows} columns={[
@@ -98,7 +90,7 @@ export default function Overview() {
           title: status.key,
           key: status.key,
           width: 130,
-          render: (row: TeamTaskPeriodStats) => <Tag color={status.color}>{status.key === '进行中' ? row.statuses['进行中'] + row.statuses['回扫中'] : row.statuses[status.key]} 个</Tag>,
+          render: (row: TeamTaskPeriodStats) => <Tag color={status.color}>{row.statuses[status.key]} 个</Tag>,
         })),
       ]} />
     </Card> : <Card className="overview-summary-card" title={<><span>{scopeLabel}进行中任务明细</span><small>每个任务独立展示，便于横向核对</small></>}>
@@ -122,14 +114,8 @@ export default function Overview() {
             <Col span={8}><div style={{ color: 'var(--ink-soft)', fontSize: 12 }}>{isGlobalManager ? '平均平台进度（最新）' : '平均平台进度'}</div><Progress type="circle" size={52} strokeColor={TEAM_COLORS[team.team]} percent={Math.round(team.avgProgress * 100)} /></Col>
           </Row>
           <div className="difficulty-panel"><span>任务难度分布</span><DifficultyBreakdown facts={team} /></div>
-          <div className="action-strip"><span>{isGlobalManager ? '区间管理动作' : '本周管理动作'}</span><Tag>规则/需求文档 {team.periodActions.ruleOrRequirementUploads}</Tag><Tag>报告 {team.periodActions.reportUploads}</Tag><Tag>回扫 {team.periodActions.rescanRecords}</Tag></div>
+          <div className="action-strip"><span>{isGlobalManager ? '区间管理动作' : '本周管理动作'}</span><Tag>规则/需求文档 {team.periodActions.ruleOrRequirementUploads}</Tag><Tag>报告 {team.periodActions.reportUploads}</Tag><Tag>回扫 {team.periodActions.rescanRecords} 次</Tag><Tag>回扫支持 {team.periodActions.rescanHours} 小时</Tag></div>
           <div className="action-strip"><span>时限风险</span><Tag color={team.overdueTasks ? 'error' : 'success'}>逾期 {team.overdueTasks} 个</Tag><Tag>逾期率 {Math.round(team.overdueRate * 100)}%</Tag><Tag color={team.riskTasks ? 'warning' : 'success'}>需关注 {team.riskTasks} 个</Tag></div>
-          <div className="section-kicker">{isGlobalManager ? '区间重点任务' : '当前重点任务'}</div>
-          {team.tasks.length ? team.tasks.map(task => <div key={task.id} onClick={() => navigate(`/tasks/${task.id}`)} className={`task-focus-item ${task.alerts.length ? 'is-risk' : ''}`}>
-            <div className="task-focus-head"><span>{task.name}</span>{task.alerts.length ? <WarningFilled /> : null}</div>
-            <div className="task-focus-meta"><DifficultyStars value={task.difficulty} readOnly /><span>{task.dataVolume.toLocaleString()} 条 · 平台进度 {Math.round(task.progress * 100)}%</span></div>
-            <div className="task-focus-action">{taskAction(task)}</div>
-          </div>) : <div className="empty-task-state">当前无进行中任务</div>}
         </Card>
       </Col>)}
     </Row>

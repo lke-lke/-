@@ -15,6 +15,8 @@ export interface Task {
   dataVolume: number;
   workforce: number;
   createdAt: string;
+  /** 业务任务的实际下发日期；系统建单时间仍由 createdAt 表示。 */
+  dispatchedAt?: string;
   deadline: string;
   /** 组长预填的预计完成时间；实际截止时间以 deadline 为准。 */
   expectedDeadline?: string;
@@ -30,6 +32,9 @@ export interface Task {
   mainTask?: string;
   linkedTask?: string;
   participantNames?: string[];
+  mappingStatus?: 'complete' | 'needs_completion' | 'conflict';
+  sourcePayload?: Record<string, unknown>;
+  rowVersion?: number;
 }
 
 export interface TaskRelation {
@@ -131,6 +136,7 @@ export interface TaskSettlement {
   finalDifficulty: number;
   difficultyReason?: string;
   summary?: string;
+  actualDeadline?: string;
 }
 
 export interface RescanRecord {
@@ -145,6 +151,10 @@ export interface RescanRecord {
   expectedDone: string;
   actualDone?: string;
   accepted?: boolean;
+  supportHours?: number;
+  sourceResult?: string;
+  acceptanceDetail?: string;
+  status?: 'pending' | 'in_progress' | 'accepted' | 'rejected';
   createdAt: string;
 }
 

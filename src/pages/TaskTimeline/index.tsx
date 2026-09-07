@@ -4,12 +4,11 @@ import ReactECharts from 'echarts-for-react';
 import dayjs, { Dayjs } from 'dayjs';
 import { ALL_TEAMS, Team } from '@/constants';
 import { getTasks } from '@/services/taskService';
-import { getRescanRecords } from '@/services/rescanService';
-import { getTeamTaskPeriodStats, TaskBoardStatus, TeamTaskPeriodStats } from '@/services/statsService';
+import { getTeamTaskPeriodStatsFromSource, TaskBoardStatus, TeamTaskPeriodStats } from '@/services/statsService';
 import { formatCompanyQuarter, getPeriodRange, PeriodMode } from '@/utils/timeRange';
 
-const STATUSES: TaskBoardStatus[] = ['待开始', '进行中', '回扫中', '待确认', '已完成'];
-const STATUS_COLORS: Record<TaskBoardStatus, string> = { 待开始: '#ddd3c9', 进行中: '#806c79', 回扫中: '#b97d7b', 待确认: '#c1a0ac', 已完成: '#928e5e' };
+const STATUSES: TaskBoardStatus[] = ['待开始', '进行中', '待确认', '已完成'];
+const STATUS_COLORS: Record<TaskBoardStatus, string> = { 待开始: '#ddd3c9', 进行中: '#806c79', 待确认: '#c1a0ac', 已完成: '#928e5e' };
 
 export default function TaskTimeline() {
   const [mode, setMode] = useState<PeriodMode>('月');
@@ -21,7 +20,7 @@ export default function TaskTimeline() {
   useEffect(() => {
     const nextRange = getPeriodRange(mode, anchorDate, customRange);
     setRange(nextRange);
-    Promise.all([getTasks(), getRescanRecords()]).then(([tasks, rescans]) => setStats(getTeamTaskPeriodStats(tasks, rescans, nextRange[0], nextRange[1])));
+    getTasks().then(tasks => getTeamTaskPeriodStatsFromSource(tasks, nextRange[0], nextRange[1])).then(setStats);
   }, [mode, anchorDate, customRange]);
 
   const chartOption = useMemo(() => ({
@@ -35,7 +34,7 @@ export default function TaskTimeline() {
 
   const picker = mode === '日' ? 'date' : mode === '周' ? 'week' : mode === '月' ? 'month' : 'quarter';
   return <div>
-    <div className="page-title-row"><div><div className="eyebrow">TASK CALENDAR</div><h2>时间任务看板</h2><p>选择任意时间区间，比较四组的任务总量与当前状态分布。</p></div></div>
+    <div className="page-title-row"><div><div className="eyebrow">TASK CALENDAR</div><h2>时间任务看板</h2><p>选择任意时间区间，比较 B/C/D 三组的任务总量与当前状态分布。</p></div></div>
     <Card className="timeline-filter-card">
       <div className="timeline-filter-row">
         <Segmented value={mode} onChange={value => setMode(value as PeriodMode)} options={['日', '周', '月', '季度', '自定义']} />
@@ -43,9 +42,9 @@ export default function TaskTimeline() {
         <Tag color="blue">统计区间：{range[0].format('YYYY-MM-DD')} 至 {range[1].format('YYYY-MM-DD')}</Tag>
       </div>
     </Card>
-    <Alert showIcon type="info" className="overview-info" message="回扫中：关联存在尚未完成或未验收回扫记录的任务。待确认：数据完成、文档齐套后等待验收的任务。" />
-    <Card className="timeline-chart-card" title="四组任务状态对比"><div className="status-legend">{STATUSES.map(status => <span key={status}><i className="legend-dot" style={{ background: STATUS_COLORS[status] }} />{status}</span>)}</div><ReactECharts option={{ ...chartOption, legend: { show: false }}} style={{ height: 300 }} /></Card>
-    <Card className="overview-summary-card" title="四组任务状态明细">
+    <Alert showIcon type="info" className="overview-info" message="待确认：任务已完成作业，正在等待交付物验收、返修关闭或结项确认；回扫作为过程记录，不再作为任务主状态。" />
+    <Card className="timeline-chart-card" title="三组任务状态对比"><div className="status-legend">{STATUSES.map(status => <span key={status}><i className="legend-dot" style={{ background: STATUS_COLORS[status] }} />{status}</span>)}</div><ReactECharts option={{ ...chartOption, legend: { show: false }}} style={{ height: 300 }} /></Card>
+    <Card className="overview-summary-card" title="三组任务状态明细">
       <Table rowKey="team" pagination={false} dataSource={stats} columns={[
         { title: '小组', dataIndex: 'team', width: 140, render: (team: Team) => <strong>{team}</strong> }, { title: '任务总量', dataIndex: 'total', width: 100, render: (value: number) => `${value} 个` },
         ...STATUSES.map(status => ({ title: status, key: status, width: 110, render: (row: TeamTaskPeriodStats) => <Tag color={STATUS_COLORS[status]}>{row.statuses[status]} 个</Tag> })),
